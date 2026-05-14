@@ -361,7 +361,9 @@ def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
 # ══════════════════════════════════════════════════════════════════════════════
 # CIRCULAR IMAGE RENDERER
 # ══════════════════════════════════════════════════════════════════════════════
-DISPLAY_SIZE_PX = 300   # fixed on-screen diameter for test circles (both layouts)
+# Maximum on-screen diameter to prevent overflow (caps at 420px per column)
+MAX_DISPLAY_PX = 420
+MIN_DISPLAY_PX = 80
 
 def pil_to_b64(img: Image.Image, size_px: int) -> str:
     """Resize PIL image to size_px square and return base64-encoded PNG string."""
@@ -370,15 +372,17 @@ def pil_to_b64(img: Image.Image, size_px: int) -> str:
     img_resized.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
 
-def show_circle(img: Image.Image, label: str, size_px: int = DISPLAY_SIZE_PX):
-    """Render a PIL image as a perfect circle (no grey square corners) at fixed size."""
-    b64 = pil_to_b64(img, size_px)
+def show_circle(img: Image.Image, label: str, physics_px: int):
+    """Render a PIL image as a circle at the physics-correct pixel size (capped to screen)."""
+    # Clamp to reasonable screen bounds — preserves proportional size changes
+    display_px = int(np.clip(physics_px, MIN_DISPLAY_PX, MAX_DISPLAY_PX))
+    b64 = pil_to_b64(img, display_px)
     st.markdown(
         f"""
         <div style="text-align:center; margin-bottom:8px;">
           <div style="font-weight:600; font-size:15px; margin-bottom:6px; color:#1e293b;">{label}</div>
           <img src="data:image/png;base64,{b64}"
-               style="width:{size_px}px; height:{size_px}px;
+               style="width:{display_px}px; height:{display_px}px;
                       border-radius:50%; display:inline-block;
                       box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
                alt="{label}" />
@@ -423,7 +427,7 @@ with st.sidebar:
         dpi = COMMON_SCREENS[screen_choice]
         st.caption(f"DPI: **{dpi}**")
 
-    dist_cm = st.number_input("Testing distance (cm)", min_value=30, max_value=100,
+    dist_cm = st.number_input("Testing distance (cm)", min_value=30, max_value=200,
                                value=50, step=5, key="distance_cm_input")
 
     val = validate_screen(dpi, dist_cm)
@@ -676,15 +680,17 @@ with tab_live:
         img_B = grating_img if pos == "B" else blank_img
 
         # Display — always side-by-side A | B, grating randomly in A or B
+        display_px = int(np.clip(diam, MIN_DISPLAY_PX, MAX_DISPLAY_PX))
         st.markdown("### Which circle has the **stripes**?")
         st.caption(f"Row {row} · {freq} cpd · Position {score} · "
-                   f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f}")
+                   f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f} · "
+                   f"Circle: {display_px}px ({dist_cm} cm, {dpi} DPI)")
 
         col_a, col_b = st.columns(2)
         with col_a:
-            show_circle(img_A, "A")
+            show_circle(img_A, "A", diam)
         with col_b:
-            show_circle(img_B, "B")
+            show_circle(img_B, "B", diam)
 
         # Response buttons
         st.markdown("#### Patient response:")
@@ -876,4 +882,4 @@ with tab_history:
 st.markdown("---")
 st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
 
-# v2.5.0 — near-vision mode: laptop presets, 50cm default, 50% brightness guidance
+# v2.6.0 — fix: circle size now responds to distance/DPI changes; range restored to 30-200 cm
