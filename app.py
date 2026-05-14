@@ -15,6 +15,7 @@ import json
 import os
 import random
 import io
+import base64
 from PIL import Image
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -354,6 +355,35 @@ def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
     return buf.getvalue()
 
 # ══════════════════════════════════════════════════════════════════════════════
+# CIRCULAR IMAGE RENDERER
+# ══════════════════════════════════════════════════════════════════════════════
+DISPLAY_SIZE_PX = 300   # fixed on-screen diameter for test circles (both layouts)
+
+def pil_to_b64(img: Image.Image, size_px: int) -> str:
+    """Resize PIL image to size_px square and return base64-encoded PNG string."""
+    img_resized = img.resize((size_px, size_px), Image.LANCZOS)
+    buf = io.BytesIO()
+    img_resized.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+def show_circle(img: Image.Image, label: str, size_px: int = DISPLAY_SIZE_PX):
+    """Render a PIL image as a perfect circle (no grey square corners) at fixed size."""
+    b64 = pil_to_b64(img, size_px)
+    st.markdown(
+        f"""
+        <div style="text-align:center; margin-bottom:8px;">
+          <div style="font-weight:600; font-size:15px; margin-bottom:6px; color:#1e293b;">{label}</div>
+          <img src="data:image/png;base64,{b64}"
+               style="width:{size_px}px; height:{size_px}px;
+                      border-radius:50%; display:inline-block;
+                      box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
+               alt="{label}" />
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SESSION STATE INIT
 # ══════════════════════════════════════════════════════════════════════════════
 def init_state():
@@ -643,26 +673,24 @@ with tab_live:
                    f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f}")
 
         if axis_lr:
-            # Side-by-side LEFT / RIGHT layout
+            # Side-by-side LEFT / RIGHT layout — equal columns, fixed 300px circles
             left_img  = grating_img if pos == "left"  else blank_img
             right_img = grating_img if pos == "right" else blank_img
-            _, col_left, _, col_right, _ = st.columns([1, 3, 1, 3, 1])
+            col_left, col_right = st.columns(2)
             with col_left:
-                st.markdown("**Left**")
-                st.image(left_img, use_container_width=True)
+                show_circle(left_img, "Left")
             with col_right:
-                st.markdown("**Right**")
-                st.image(right_img, use_container_width=True)
+                show_circle(right_img, "Right")
         else:
-            # Stacked TOP / BOTTOM layout
+            # TOP / BOTTOM layout — two circles side-by-side but labelled Top & Bottom
+            # (avoids scroll-off-screen; circles same fixed 300px size)
             top_img    = grating_img if pos == "top"    else blank_img
             bottom_img = grating_img if pos == "bottom" else blank_img
-            _, col_top, _ = st.columns([1, 4, 1])
+            col_top, col_bot = st.columns(2)
             with col_top:
-                st.markdown("**Top**")
-                st.image(top_img, use_container_width=True)
-                st.markdown("**Bottom**")
-                st.image(bottom_img, use_container_width=True)
+                show_circle(top_img, "Top")
+            with col_bot:
+                show_circle(bottom_img, "Bottom")
 
         # Response buttons — dynamically labelled to match current axis
         st.markdown("#### Patient response:")
@@ -862,4 +890,4 @@ with tab_history:
 st.markdown("---")
 st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
 
-# v2.2.0 — fixes: sidebar text colour, grating L/R+T/B alternation, AULCSF recalibrated, PDF multi-visit colours
+# v2.3.0 — circular grating display (no grey square), fixed 300px size both layouts
