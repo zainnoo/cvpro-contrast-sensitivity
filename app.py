@@ -565,6 +565,99 @@ with tab_live:
 | Screen preset | Select your exact laptop model in the sidebar |
         """)
 
+    with st.expander("🔬 Scientific basis — how CV PRO generates authentic gratings"):
+        st.markdown("""
+## How CV PRO Produces Clinically Valid Contrast Sensitivity Gratings
+
+### The core question: can a laptop screen replace a ₹7 lakh calibrated chart?
+
+The answer lies in understanding what the CSV-1000 actually tests — and replicating that precisely in software.
+
+---
+
+### Step 1 — The screen as a calibrated ruler
+
+Every modern laptop display is a physical grid of pixels, and the size of each pixel is fixed by the manufacturer.
+From the screen's **DPI (dots per inch)** — which we know precisely for each device — we can calculate the physical width of one pixel:
+
+> **Pixel size = 2.54 cm ÷ DPI**
+
+On a Samsung Galaxy Book4 Pro (212 DPI), each pixel is **0.01198 cm wide** — about 0.12 mm. This is a fixed, known quantity, as precise as any ruler.
+
+---
+
+### Step 2 — Converting pixels to degrees of visual angle
+
+Contrast sensitivity is measured in **cycles per degree (cpd)** of visual angle. The visual angle subtended by one pixel depends on how far the eye is from the screen:
+
+> **Pixels per degree = 1 ÷ arctan(pixel size ÷ viewing distance)**
+
+At 50 cm on the Samsung Galaxy Book4 Pro:
+
+> 1 ÷ arctan(0.01198 ÷ 50) = **72.8 pixels per degree**
+
+This means we know, to sub-pixel accuracy, how many pixels correspond to one degree of visual angle at your testing distance.
+
+---
+
+### Step 3 — Computing the exact grating diameter
+
+For each spatial frequency, we calculate how many pixels are needed to display exactly the right number of cycles across the correct visual angle:
+
+> **Grating diameter (px) = (pixels per degree ÷ frequency in cpd) × number of cycles**
+
+For Row A (3 cpd) at 50 cm on the Galaxy Book4 Pro:
+
+> (72.8 ÷ 3) × 5 = **121 pixels**
+
+This grating subtends exactly the correct visual angle — the same 3 cpd stimulus that the CSV-1000 presents, now computed from first principles.
+
+---
+
+### Step 4 — Mathematically pure sine wave luminance
+
+The luminance of each pixel across the grating follows a true sinusoidal function:
+
+> **L(x) = 0.5 × (1 + C × sin(2π · f · x))**
+
+Where **C** is the Michelson contrast — taken directly from VectorVision's published CSV-1000 normative data (e.g., Row B position 8 has a linear CS of 193, so C = 1/193 = 0.0052).
+
+There are **no hard edges, no square waves, no harmonic distortion** — only a single pure spatial frequency, identical in mathematical form to what the CSV-1000 projects.
+
+---
+
+### Step 5 — Gamma correction ensures physical accuracy
+
+A pixel value of 128 (mid-grey) does not produce half the light output of 255 (white) — screens are non-linear. Without correction, the sine wave would be distorted in physical luminance.
+
+CV PRO applies the **standard sRGB gamma correction (γ = 2.2)** to every pixel before display:
+
+> **Pixel value = (L)^(1/2.2) × 255**
+
+This ensures that what the screen physically emits is a true sinusoidal luminance pattern — not just a sinusoidal pixel value pattern. This is the same correction applied in laboratory-grade psychophysics software.
+
+---
+
+### Step 6 — Identical contrast values to CSV-1000
+
+The Michelson contrast at each of the 36 test positions is taken directly from VectorVision's published linear CS norms. The scoring system, log CS values, AULCSF calculation, and age-normative bands are all identical to those used with the physical CSV-1000 chart.
+
+---
+
+### What is different from the CSV-1000
+
+| Factor | CSV-1000 | CV PRO |
+|---|---|---|
+| Grating physics | Sinusoidal ✅ | Sinusoidal ✅ |
+| Contrast values | VectorVision norms ✅ | Identical ✅ |
+| Spatial frequency accuracy | Hardware calibrated | Computed from DPI + distance ✅ |
+| Luminance | Fixed 85 cd/m² (backlit) | ~80–100 cd/m² at 50% brightness ⚠ |
+| Testing distance | 200 cm (far vision) | 50 cm (near vision) ⚠ |
+| Scoring & norms | Same | Identical ✅ |
+
+The two meaningful differences are **luminance** and **testing distance**. Luminance is controlled by standardising screen brightness at 50%. Testing at near distance is a deliberate design choice — it makes the instrument portable and practical — but results should be labelled as **near vision contrast sensitivity** and not directly equated to distance CSV-1000 scores without acknowledgment of this difference.
+        """)
+
     st.divider()
 
     # ── Test state machine ────────────────────────────────────────────────────
@@ -915,6 +1008,17 @@ with tab_history:
 
 # Footer
 st.markdown("---")
-st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
+st.markdown(
+    "<div style='text-align:center; color:#94a3b8; font-size:12px; line-height:2;'>"
+    "CV PRO · Near Vision Contrast Sensitivity · "
+    "Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · "
+    "<span style='color:#94a3b8;'>For research &amp; clinical use</span>"
+    "<br>For scientific basis of grating generation, open the "
+    "<b>🔬 Scientific basis</b> section in the Live Test tab."
+    "</div>",
+    unsafe_allow_html=True,
+)
 
 # v2.6.0 — fix: circle size now responds to distance/DPI changes; range restored to 30-200 cm
+# v2.7.0 — feat: inter-stimulus interval (ISI) 450ms grey discs between stimuli
+# v2.8.0 — feat: Scientific basis expander in Live Test tab; footer reference
