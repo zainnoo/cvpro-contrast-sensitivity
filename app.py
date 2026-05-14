@@ -16,6 +16,7 @@ import os
 import random
 import io
 import base64
+import time
 from PIL import Image
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -402,7 +403,7 @@ def init_state():
         "test_row_idx": 0, "test_score_idx": 0,
         "test_answers": {}, "test_scores": {},
         "test_grating_pos": {}, "test_done": False,
-        "test_started": False,
+        "test_started": False, "isi_active": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -654,6 +655,38 @@ with tab_live:
                 st.rerun()
 
     else:
+        # ── Inter-stimulus interval (ISI) ─────────────────────────────────────
+        if st.session_state.get("isi_active", False):
+            st.session_state.isi_active = False
+            isi_slot = st.empty()
+            isi_slot.markdown(
+                """
+                <div style="
+                    display:flex; flex-direction:column;
+                    align-items:center; justify-content:center;
+                    height:320px; gap:32px;
+                ">
+                  <div style="display:flex; gap:80px;">
+                    <div style="
+                        width:180px; height:180px; border-radius:50%;
+                        background:#d1d5db;
+                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);
+                    "></div>
+                    <div style="
+                        width:180px; height:180px; border-radius:50%;
+                        background:#d1d5db;
+                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);
+                    "></div>
+                  </div>
+                  <div style="color:#94a3b8; font-size:13px; letter-spacing:0.05em;">next stimulus loading…</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            time.sleep(0.45)
+            isi_slot.empty()
+            st.rerun()
+
         # ── Show current grating pair ─────────────────────────────────────────
         row_idx   = st.session_state.test_row_idx
         score_idx = st.session_state.test_score_idx
@@ -708,6 +741,7 @@ with tab_live:
                 st.session_state.test_score_idx = 0
             else:
                 st.session_state.test_score_idx = nxt
+            st.session_state.isi_active = True  # trigger ISI blank
 
         with b1:
             if st.button("🅰️  Circle A", use_container_width=True, key=f"a_{row}{score}"):
@@ -722,6 +756,7 @@ with tab_live:
             if st.button("⏭️ Next Row", use_container_width=True, key=f"s_{row}{score}"):
                 st.session_state.test_row_idx  += 1
                 st.session_state.test_score_idx = 0
+                st.session_state.isi_active = True
                 st.rerun()
 
         if score == "S":
