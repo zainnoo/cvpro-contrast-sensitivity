@@ -812,3 +812,5 @@ with tab_history:
 # Footer
 st.markdown("---")
 st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
+
+# v2.1.0 — deployment marker
