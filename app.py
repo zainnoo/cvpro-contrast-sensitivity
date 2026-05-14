@@ -37,6 +37,20 @@ div[data-testid="metric-container"] {
 }
 [data-testid="stSidebar"] { background: #1e293b !important; }
 [data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea,
+[data-testid="stSidebar"] select,
+[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] *,
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] .stNumberInput input {
+    color: #1e293b !important;
+    background-color: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+}
+[data-testid="stSidebar"] ::placeholder {
+    color: #64748b !important;
+    opacity: 1 !important;
+}
 .stDownloadButton > button {
     background-color: #0ea5e9 !important; color: white !important;
     border: none !important; border-radius: 8px !important;
@@ -92,10 +106,14 @@ def calc_aulcsf(log_vals):
     return round(area, 3)
 
 def interpret_aulcsf(val):
+    """Thresholds calibrated to VectorVision CSV-1000 age-norm data.
+    Normal mean (20-55 yrs) = 1.443; -1SD = 1.317; -2SD = 1.190
+    Normal mean (56-75 yrs) = 1.216; -1SD = 1.086
+    """
     if val is None: return "Insufficient data","gray"
-    if val >= 0.60: return "Normal","green"
-    if val >= 0.45: return "Mildly reduced","orange"
-    if val >= 0.30: return "Moderately reduced","red"
+    if val >= 1.32: return "Normal","green"
+    if val >= 1.19: return "Mildly reduced","orange"
+    if val >= 1.09: return "Moderately reduced","red"
     return "Severely reduced","darkred"
 
 def get_norm_band(grp):
@@ -259,7 +277,8 @@ def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
             lv = [t.get(f"log_{r.lower()}") for r in ROW_LABELS]
             px2, py = zip(*[(j,v) for j,v in enumerate(lv) if v is not None]) if any(v is not None for v in lv) else ([],[])
             if py:
-                ax.plot(list(px2), list(py), color=pal[i%4],
+                col_i = pal[i % len(pal)]
+                ax.plot(list(px2), list(py), color=col_i,
                         ls=ls_map.get(t["eye"],"-"), lw=2.2,
                         marker="o", ms=7, markerfacecolor="white", markeredgewidth=2,
                         label=f"{t['eye']} · {t.get('visit_label') or t['visit_date']}")
@@ -524,9 +543,15 @@ with tab_live:
             st.session_state.test_visit_label= visit_label
             # Pre-randomise positions
             pos = {}
-            for row in ROW_LABELS:
-                for sc in SCORES_ALL:
-                    pos[(row,sc)] = random.choice(["top","bottom"])
+            for row_i, row in enumerate(ROW_LABELS):
+                for sc_i, sc in enumerate(SCORES_ALL):
+                    global_idx = row_i * len(SCORES_ALL) + sc_i
+                    # Alternate axis: even positions → left/right, odd → top/bottom
+                    if global_idx % 2 == 0:
+                        side = random.choice(["left", "right"])
+                    else:
+                        side = random.choice(["top", "bottom"])
+                    pos[(row, sc)] = side
             st.session_state.test_grating_pos = pos
             st.rerun()
 
@@ -598,7 +623,11 @@ with tab_live:
         score = SCORES_ALL[score_idx]
         freq  = FREQS[row]
         diam  = circle_diam_px(freq, dpi, dist_cm, CYCLES_IN_MASTER[row])
-        pos   = st.session_state.test_grating_pos.get((row,score), "top")
+        pos   = st.session_state.test_grating_pos.get((row, score), "left")
+
+        # Determine axis from position value
+        axis_lr = pos in ("left", "right")   # True = left/right layout
+        axis_tb = pos in ("top", "bottom")    # True = top/bottom layout
 
         # Progress bar
         done = row_idx * 9 + score_idx
@@ -607,23 +636,35 @@ with tab_live:
         # Load images
         grating_img = get_grating(row, score, diam)
         blank_img   = get_blank(row, diam)
-        top_img    = grating_img if pos == "top"    else blank_img
-        bottom_img = grating_img if pos == "bottom" else blank_img
 
         # Display
-        st.markdown(f"### Which circle has the **stripes**?")
+        st.markdown("### Which circle has the **stripes**?")
         st.caption(f"Row {row} · {freq} cpd · Position {score} · "
                    f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f}")
 
-        _, col_top, _, col_bot, _ = st.columns([1, 3, 1, 3, 1])
-        with col_top:
-            st.markdown("**Top**")
-            st.image(top_img, use_container_width=True)
-        with col_bot:
-            st.markdown("**Bottom**")
-            st.image(bottom_img, use_container_width=True)
+        if axis_lr:
+            # Side-by-side LEFT / RIGHT layout
+            left_img  = grating_img if pos == "left"  else blank_img
+            right_img = grating_img if pos == "right" else blank_img
+            _, col_left, _, col_right, _ = st.columns([1, 3, 1, 3, 1])
+            with col_left:
+                st.markdown("**Left**")
+                st.image(left_img, use_container_width=True)
+            with col_right:
+                st.markdown("**Right**")
+                st.image(right_img, use_container_width=True)
+        else:
+            # Stacked TOP / BOTTOM layout
+            top_img    = grating_img if pos == "top"    else blank_img
+            bottom_img = grating_img if pos == "bottom" else blank_img
+            _, col_top, _ = st.columns([1, 4, 1])
+            with col_top:
+                st.markdown("**Top**")
+                st.image(top_img, use_container_width=True)
+                st.markdown("**Bottom**")
+                st.image(bottom_img, use_container_width=True)
 
-        # Response buttons
+        # Response buttons — dynamically labelled to match current axis
         st.markdown("#### Patient response:")
         b1, b2, b3, b4 = st.columns(4)
 
@@ -640,12 +681,20 @@ with tab_live:
             else:
                 st.session_state.test_score_idx = nxt
 
-        with b1:
-            if st.button("⬆️ Top", use_container_width=True, key=f"t_{row}{score}"):
-                record("top"); st.rerun()
-        with b2:
-            if st.button("⬇️ Bottom", use_container_width=True, key=f"b_{row}{score}"):
-                record("bottom"); st.rerun()
+        if axis_lr:
+            with b1:
+                if st.button("⬅️ Left", use_container_width=True, key=f"l_{row}{score}"):
+                    record("left"); st.rerun()
+            with b2:
+                if st.button("➡️ Right", use_container_width=True, key=f"r_{row}{score}"):
+                    record("right"); st.rerun()
+        else:
+            with b1:
+                if st.button("⬆️ Top", use_container_width=True, key=f"t_{row}{score}"):
+                    record("top"); st.rerun()
+            with b2:
+                if st.button("⬇️ Bottom", use_container_width=True, key=f"b_{row}{score}"):
+                    record("bottom"); st.rerun()
         with b3:
             if st.button("❌ Neither", use_container_width=True, key=f"n_{row}{score}"):
                 record("neither"); st.rerun()
@@ -813,4 +862,4 @@ with tab_history:
 st.markdown("---")
 st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
 
-# v2.1.0 — deployment marker
+# v2.2.0 — fixes: sidebar text colour, grating L/R+T/B alternation, AULCSF recalibrated, PDF multi-visit colours
