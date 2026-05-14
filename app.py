@@ -128,21 +128,25 @@ def get_norm_band(grp):
 # ══════════════════════════════════════════════════════════════════════════════
 # SCREEN CALIBRATION
 # ══════════════════════════════════════════════════════════════════════════════
+# Near-vision laptop/tablet presets only (50 cm testing distance)
 COMMON_SCREENS = {
-    "Custom (enter DPI)": None,
-    "Full HD 1080p 24\"": 92,
-    "Full HD 1080p 27\"": 82,
-    "Full HD 1080p 21\"": 105,
-    "2K QHD 27\"": 109,
-    "4K UHD 27\"": 163,
-    "4K UHD 24\"": 183,
-    "MacBook Pro 13\" Retina": 227,
+    "Samsung Galaxy Book4 Pro 360 (16\")": 212,
     "MacBook Pro 14\" (M-series)": 254,
     "MacBook Pro 16\" (M-series)": 254,
     "MacBook Air 13\" (M-series)": 224,
-    "iPad Pro 12.9\"": 264,
-    "Dell UltraSharp 27\" U2722D": 109,
-    "LG 27\" 4K (27UK850)": 163,
+    "MacBook Air 15\" (M-series)": 224,
+    "Dell XPS 13 (2560×1600)": 227,
+    "Dell XPS 15 (3456×2160)": 261,
+    "HP Spectre x360 14\"": 260,
+    "Lenovo ThinkPad X1 Carbon (14\")": 210,
+    "Surface Laptop 5 (13.5\")": 201,
+    "Surface Pro 9 (13\")": 267,
+    "iPad Pro 12.9\" (M-series)": 264,
+    "iPad Air 11\" (M3)": 264,
+    "Full HD Laptop 15.6\" (1920×1080)": 141,
+    "Full HD Laptop 14\" (1920×1080)": 157,
+    "2K Laptop 14\" (2560×1600)": 214,
+    "Custom (enter DPI)": None,
 }
 
 def ppd(dpi, dist_cm):
@@ -407,7 +411,7 @@ init_state()
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("## 👁️ CV PRO")
-    st.caption("Contrast Sensitivity Analyser")
+    st.caption("Near Vision Contrast Sensitivity")
     st.divider()
 
     # ── Screen setup (always visible) ─────────────────────────────────────────
@@ -419,8 +423,8 @@ with st.sidebar:
         dpi = COMMON_SCREENS[screen_choice]
         st.caption(f"DPI: **{dpi}**")
 
-    dist_cm = st.number_input("Testing distance (cm)", min_value=50, max_value=400,
-                               value=200, step=10, key="distance_cm_input")
+    dist_cm = st.number_input("Testing distance (cm)", min_value=30, max_value=100,
+                               value=50, step=5, key="distance_cm_input")
 
     val = validate_screen(dpi, dist_cm)
     st.session_state["screen_dpi"] = dpi
@@ -431,7 +435,7 @@ with st.sidebar:
         st.success(f"✅ Valid · {val['ppd']} px/°")
     else:
         bad = [r for r,rv in val["rows"].items() if not rv["ok"]]
-        st.warning(f"⚠️ Rows {', '.join(bad)} need larger distance")
+        st.warning(f"⚠️ Rows {', '.join(bad)} may not render accurately at this distance")
 
     with st.expander("Circle sizes"):
         for row in ROW_LABELS:
@@ -482,17 +486,18 @@ with st.sidebar:
 if not st.session_state.active_patient:
     st.markdown("## Welcome to CV PRO")
     st.markdown("""
-**CV PRO** is a clinical contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol.
+**CV PRO** is a near-vision contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at **50 cm testing distance**.
 
 **Getting started:**
-1. **Configure your screen** in the sidebar — select your monitor type and testing distance
-2. **Add a patient** using the sidebar form
-3. Go to **🔬 Live Test** tab to run the grating test on screen
-4. Or go to **📝 Manual Entry** to type in scores from your physical chart
-5. **📈 CS Graph** shows the contrast sensitivity curve with age-norm bands
-6. **⬇️ Download PDF** for the full clinical report
+1. **Select your laptop model** in the sidebar — sets the correct DPI automatically
+2. **Set screen brightness to 50%** before starting — critical for accurate results
+3. **Add a patient** using the sidebar form
+4. Go to **🔬 Live Test** tab to run the sinusoidal grating test
+5. Or use **📝 Manual Entry** to type in scores from a physical chart
+6. **📈 CS Graph** shows the contrast sensitivity curve with age-norm bands
+7. **⬇️ Download PDF** for the full clinical report
     """)
-    st.info("👈 Start by configuring your screen setup and adding a patient in the sidebar.")
+    st.info("👈 Select your laptop model and set screen brightness to 50%, then add a patient to begin.")
     st.stop()
 
 pk = st.session_state.active_patient
@@ -545,13 +550,14 @@ with tab_live:
         st.markdown("""
 | Item | Requirement |
 |---|---|
-| Room lighting | ~85 cd/m² (normal fluorescent office light) |
-| Screen brightness | 70–80% |
-| Screen position | Eye level, no glare |
-| Patient correction | Best corrected — glasses/contacts on |
-| Eye being tested | One eye occluded with palm or occluder |
+| Testing distance | **50 cm** from laptop screen (near vision protocol) |
+| Screen brightness | **50%** — do NOT exceed; higher brightness causes false positives |
+| Room lighting | Normal ambient indoor light (no direct glare on screen) |
+| Screen angle | Tilt screen so patient sees it straight-on, no reflections |
+| Patient correction | Best corrected near vision — reading glasses / contacts on |
+| Eye being tested | Occlude other eye with palm or occluder |
 | Adaptation | 30 seconds in room light before starting |
-| Testing distance | Patient at the distance set in sidebar |
+| Screen preset | Select your exact laptop model in the sidebar |
         """)
 
     st.divider()
@@ -870,4 +876,4 @@ with tab_history:
 st.markdown("---")
 st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
 
-# v2.4.0 — A/B labelling, no layout switching, anti-run randomisation
+# v2.5.0 — near-vision mode: laptop presets, 50cm default, 50% brightness guidance
