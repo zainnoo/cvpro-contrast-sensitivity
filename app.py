@@ -571,17 +571,20 @@ with tab_live:
             st.session_state.test_done       = False
             st.session_state.test_eye        = eye_choice.split()[0]
             st.session_state.test_visit_label= visit_label
-            # Pre-randomise positions
+            # Pre-randomise: grating goes to "A" or "B" each position
+            # Guarantee no more than 2 consecutive same sides
             pos = {}
-            for row_i, row in enumerate(ROW_LABELS):
-                for sc_i, sc in enumerate(SCORES_ALL):
-                    global_idx = row_i * len(SCORES_ALL) + sc_i
-                    # Alternate axis: even positions → left/right, odd → top/bottom
-                    if global_idx % 2 == 0:
-                        side = random.choice(["left", "right"])
-                    else:
-                        side = random.choice(["top", "bottom"])
+            last = None
+            run  = 0
+            for row in ROW_LABELS:
+                for sc in SCORES_ALL:
+                    choices = ["A", "B"]
+                    if run >= 2:          # force a switch after 2 in a row
+                        choices = ["B" if last == "A" else "A"]
+                    side = random.choice(choices)
                     pos[(row, sc)] = side
+                    run = run + 1 if side == last else 1
+                    last = side
             st.session_state.test_grating_pos = pos
             st.rerun()
 
@@ -653,11 +656,7 @@ with tab_live:
         score = SCORES_ALL[score_idx]
         freq  = FREQS[row]
         diam  = circle_diam_px(freq, dpi, dist_cm, CYCLES_IN_MASTER[row])
-        pos   = st.session_state.test_grating_pos.get((row, score), "left")
-
-        # Determine axis from position value
-        axis_lr = pos in ("left", "right")   # True = left/right layout
-        axis_tb = pos in ("top", "bottom")    # True = top/bottom layout
+        pos   = st.session_state.test_grating_pos.get((row, score), "A")
 
         # Progress bar
         done = row_idx * 9 + score_idx
@@ -667,32 +666,21 @@ with tab_live:
         grating_img = get_grating(row, score, diam)
         blank_img   = get_blank(row, diam)
 
-        # Display
+        img_A = grating_img if pos == "A" else blank_img
+        img_B = grating_img if pos == "B" else blank_img
+
+        # Display — always side-by-side A | B, grating randomly in A or B
         st.markdown("### Which circle has the **stripes**?")
         st.caption(f"Row {row} · {freq} cpd · Position {score} · "
                    f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f}")
 
-        if axis_lr:
-            # Side-by-side LEFT / RIGHT layout — equal columns, fixed 300px circles
-            left_img  = grating_img if pos == "left"  else blank_img
-            right_img = grating_img if pos == "right" else blank_img
-            col_left, col_right = st.columns(2)
-            with col_left:
-                show_circle(left_img, "Left")
-            with col_right:
-                show_circle(right_img, "Right")
-        else:
-            # TOP / BOTTOM layout — two circles side-by-side but labelled Top & Bottom
-            # (avoids scroll-off-screen; circles same fixed 300px size)
-            top_img    = grating_img if pos == "top"    else blank_img
-            bottom_img = grating_img if pos == "bottom" else blank_img
-            col_top, col_bot = st.columns(2)
-            with col_top:
-                show_circle(top_img, "Top")
-            with col_bot:
-                show_circle(bottom_img, "Bottom")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            show_circle(img_A, "A")
+        with col_b:
+            show_circle(img_B, "B")
 
-        # Response buttons — dynamically labelled to match current axis
+        # Response buttons
         st.markdown("#### Patient response:")
         b1, b2, b3, b4 = st.columns(4)
 
@@ -709,20 +697,12 @@ with tab_live:
             else:
                 st.session_state.test_score_idx = nxt
 
-        if axis_lr:
-            with b1:
-                if st.button("⬅️ Left", use_container_width=True, key=f"l_{row}{score}"):
-                    record("left"); st.rerun()
-            with b2:
-                if st.button("➡️ Right", use_container_width=True, key=f"r_{row}{score}"):
-                    record("right"); st.rerun()
-        else:
-            with b1:
-                if st.button("⬆️ Top", use_container_width=True, key=f"t_{row}{score}"):
-                    record("top"); st.rerun()
-            with b2:
-                if st.button("⬇️ Bottom", use_container_width=True, key=f"b_{row}{score}"):
-                    record("bottom"); st.rerun()
+        with b1:
+            if st.button("🅰️  Circle A", use_container_width=True, key=f"a_{row}{score}"):
+                record("A"); st.rerun()
+        with b2:
+            if st.button("🅱️  Circle B", use_container_width=True, key=f"b_{row}{score}"):
+                record("B"); st.rerun()
         with b3:
             if st.button("❌ Neither", use_container_width=True, key=f"n_{row}{score}"):
                 record("neither"); st.rerun()
@@ -890,4 +870,4 @@ with tab_history:
 st.markdown("---")
 st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
 
-# v2.3.0 — circular grating display (no grey square), fixed 300px size both layouts
+# v2.4.0 — A/B labelling, no layout switching, anti-run randomisation
