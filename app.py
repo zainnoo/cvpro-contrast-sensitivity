@@ -1,6 +1,7 @@
 """
 CV PRO — Contrast Sensitivity Analyser
-Streamlit app based on the VectorVision CSV-1000 protocol.
+Streamlit app · VectorVision CSV-1000 protocol
+All modules consolidated into one file for reliability.
 """
 
 import streamlit as st
@@ -9,21 +10,12 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import datetime
 import json
 import os
-
-from cs_logic import (
-    score_to_log, calc_aulcsf, interpret_aulcsf,
-    ROW_LABELS, ROW_NAMES, SPATIAL_FREQS, get_norm_band, age_group
-)
-from pdf_report import generate_pdf
-from screen_calibration import (
-    validate_setup, COMMON_SCREENS, recommended_distance,
-    circle_diameter_pixels
-)
-from test_display import render_calibration_ui, render_test_ui
+import random
+import io
+from PIL import Image
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -33,493 +25,790 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .main { background-color: #f8fafc; }
-    .stApp > header { background: transparent; }
-
-    /* Metric cards */
-    div[data-testid="metric-container"] {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 14px 18px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    }
-
-    /* Sidebar */
-    [data-testid="stSidebar"] { background: #1e293b !important; }
-    [data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-    [data-testid="stSidebar"] .stSelectbox label,
-    [data-testid="stSidebar"] .stTextInput label,
-    [data-testid="stSidebar"] .stNumberInput label { color: #94a3b8 !important; }
-
-    /* Score selects */
-    div[data-testid="stSelectbox"] > label { font-weight: 600; color: #0ea5e9; }
-
-    /* Buttons */
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: 500;
-    }
-    .stDownloadButton > button {
-        background-color: #0ea5e9 !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        font-weight: 500 !important;
-        width: 100%;
-    }
-
-    /* Section headers */
-    .section-header {
-        font-size: 15px;
-        font-weight: 600;
-        color: #1e293b;
-        margin-bottom: 12px;
-        padding-bottom: 6px;
-        border-bottom: 2px solid #0ea5e9;
-    }
-
-    /* AULCSF badge */
-    .badge {
-        display: inline-block;
-        padding: 3px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 600;
-    }
-
-    /* Log value */
-    .log-val {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 13px;
-        color: #0ea5e9;
-        font-weight: 600;
-    }
-
-    /* Test card */
-    .test-card {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+div[data-testid="metric-container"] {
+    background: white; border: 1px solid #e2e8f0;
+    border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+[data-testid="stSidebar"] { background: #1e293b !important; }
+[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+.stDownloadButton > button {
+    background-color: #0ea5e9 !important; color: white !important;
+    border: none !important; border-radius: 8px !important;
+    font-weight: 500 !important; width: 100%;
+}
+.section-hdr {
+    font-size: 15px; font-weight: 600; color: #1e293b;
+    margin-bottom: 12px; padding-bottom: 6px;
+    border-bottom: 2px solid #0ea5e9;
+}
 </style>
 """, unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CS LOGIC
+# ══════════════════════════════════════════════════════════════════════════════
+LOG_CS = {
+    "A": {1:1.00,2:1.17,3:1.34,4:1.49,5:1.63,6:1.78,7:1.93,8:2.08},
+    "B": {1:1.21,2:1.38,3:1.55,4:1.70,5:1.84,6:1.99,7:2.14,8:2.29},
+    "C": {1:0.91,2:1.08,3:1.25,4:1.40,5:1.54,6:1.69,7:1.84,8:1.99},
+    "D": {1:0.47,2:0.64,3:0.81,4:0.96,5:1.10,6:1.25,7:1.40,8:1.55},
+}
+# Official linear CS values → Michelson contrast = 1/CS
+LINEAR_CS = {
+    "A": [5,  10,  15,  22,  31,  43,  61,  85,  120],  # S,1..8
+    "B": [8,  16,  24,  36,  50,  70,  99,  138, 193],
+    "C": [4,  8,   12,  18,  25,  35,  50,  70,  99 ],
+    "D": [1.5,3,   4.5, 7,   9.5, 13,  18,  25,  36 ],
+}
+SPATIAL_FREQS = [3, 6, 12, 18]
+LOG_SPATIAL_FREQS = [np.log10(f) for f in SPATIAL_FREQS]
+ROW_LABELS = ["A","B","C","D"]
+ROW_NAMES  = {"A":"3 cpd","B":"6 cpd","C":"12 cpd","D":"18 cpd"}
+SCORES_ALL = ["S","1","2","3","4","5","6","7","8"]
+CYCLES_IN_MASTER = {"A":5,"B":8,"C":12,"D":16}
+FREQS = {"A":3,"B":6,"C":12,"D":18}
+MASTER_DPI = 1200  # px diameter of master grating images
 
-# ── Session state initialisation ──────────────────────────────────────────────
+AGE_NORMS = {
+    "20-55": {"mean":[1.84,2.09,1.76,1.33],"sd":[0.14,0.16,0.17,0.19]},
+    "56-75": {"mean":[1.56,1.80,1.50,0.93],"sd":[0.15,0.165,0.15,0.25]},
+}
+
+def score_to_log(row, score):
+    if not score: return None
+    return LOG_CS[row].get(int(score))
+
+def calc_aulcsf(log_vals):
+    if all(v is None for v in log_vals): return None
+    v = [x if x is not None else 0.0 for x in log_vals]
+    area = sum(((v[i]+v[i+1])/2)*(LOG_SPATIAL_FREQS[i+1]-LOG_SPATIAL_FREQS[i])
+               for i in range(len(LOG_SPATIAL_FREQS)-1))
+    return round(area, 3)
+
+def interpret_aulcsf(val):
+    if val is None: return "Insufficient data","gray"
+    if val >= 0.60: return "Normal","green"
+    if val >= 0.45: return "Mildly reduced","orange"
+    if val >= 0.30: return "Moderately reduced","red"
+    return "Severely reduced","darkred"
+
+def get_norm_band(grp):
+    n = AGE_NORMS[grp]
+    return {
+        "upper":[m+s for m,s in zip(n["mean"],n["sd"])],
+        "mean": n["mean"],
+        "lower":[max(0,m-s) for m,s in zip(n["mean"],n["sd"])],
+    }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCREEN CALIBRATION
+# ══════════════════════════════════════════════════════════════════════════════
+COMMON_SCREENS = {
+    "Custom (enter DPI)": None,
+    "Full HD 1080p 24\"": 92,
+    "Full HD 1080p 27\"": 82,
+    "Full HD 1080p 21\"": 105,
+    "2K QHD 27\"": 109,
+    "4K UHD 27\"": 163,
+    "4K UHD 24\"": 183,
+    "MacBook Pro 13\" Retina": 227,
+    "MacBook Pro 14\" (M-series)": 254,
+    "MacBook Pro 16\" (M-series)": 254,
+    "MacBook Air 13\" (M-series)": 224,
+    "iPad Pro 12.9\"": 264,
+    "Dell UltraSharp 27\" U2722D": 109,
+    "LG 27\" 4K (27UK850)": 163,
+}
+
+def ppd(dpi, dist_cm):
+    """Pixels per degree of visual angle."""
+    px_cm = 2.54 / dpi
+    return 1.0 / np.degrees(np.arctan(px_cm / dist_cm))
+
+def circle_diam_px(freq_cpd, dpi, dist_cm, cycles):
+    """Compute display diameter in pixels for exact visual angle."""
+    return max(60, int(round(ppd(dpi, dist_cm) / freq_cpd * cycles)))
+
+def validate_screen(dpi, dist_cm):
+    results = {"ppd": round(ppd(dpi, dist_cm), 1), "rows": {}}
+    for row in ROW_LABELS:
+        freq = FREQS[row]
+        cyc  = CYCLES_IN_MASTER[row]
+        dp   = circle_diam_px(freq, dpi, dist_cm, cyc)
+        ppc  = ppd(dpi, dist_cm) / freq
+        ok   = ppc >= 2.0 and dp >= 60
+        results["rows"][row] = {"freq":freq,"diam_px":dp,"ppc":round(ppc,1),"ok":ok}
+    results["overall_ok"] = all(r["ok"] for r in results["rows"].values())
+    return results
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GRATING GENERATOR (runs on demand, cached)
+# ══════════════════════════════════════════════════════════════════════════════
+GRATING_DIR = os.path.join(os.path.dirname(__file__), "gratings_output", "gratings")
+BLANK_DIR   = os.path.join(os.path.dirname(__file__), "gratings_output", "blanks")
+GRATINGS_AVAILABLE = os.path.isdir(GRATING_DIR)
+
+def linear_to_srgb(L):
+    return (np.power(np.clip(L, 0, 1), 1/2.2) * 255).astype(np.uint8)
+
+def make_grating_image(freq_cpd, michelson, diam_px, cycles):
+    x = np.linspace(0, cycles * 2 * np.pi, diam_px)
+    X = np.tile(x, (diam_px, 1))
+    L = 0.5 * (1 + michelson * np.sin(X))
+    cy = cx = diam_px // 2
+    yy, xx = np.ogrid[:diam_px, :diam_px]
+    L[np.sqrt((xx-cx)**2+(yy-cy)**2) > cx-1] = 0.5
+    px = linear_to_srgb(L)
+    return Image.fromarray(np.stack([px,px,px], axis=-1), mode="RGB")
+
+def make_blank_image(diam_px):
+    v = int(linear_to_srgb(np.array([0.5]))[0])
+    return Image.new("RGB", (diam_px, diam_px), (v, v, v))
+
+@st.cache_data(show_spinner=False)
+def get_grating(row, score_label, diam_px):
+    """Load from pre-generated file if available, else generate on-the-fly."""
+    if GRATINGS_AVAILABLE:
+        path = os.path.join(GRATING_DIR, f"grating_{row}{score_label}.png")
+        if os.path.exists(path):
+            return Image.open(path).resize((diam_px, diam_px), Image.LANCZOS)
+    # Fallback: generate on-the-fly
+    idx = SCORES_ALL.index(score_label)
+    cs_val = LINEAR_CS[row][idx]
+    michelson = 1.0 / cs_val
+    return make_grating_image(FREQS[row], michelson, diam_px, CYCLES_IN_MASTER[row])
+
+@st.cache_data(show_spinner=False)
+def get_blank(row, diam_px):
+    if GRATINGS_AVAILABLE:
+        path = os.path.join(BLANK_DIR, f"blank_{row}.png")
+        if os.path.exists(path):
+            return Image.open(path).resize((diam_px, diam_px), Image.LANCZOS)
+    return make_blank_image(diam_px)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PDF REPORT
+# ══════════════════════════════════════════════════════════════════════════════
+def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                    Table, TableStyle, HRFlowable,
+                                    Image as RLImage, KeepTogether)
+    from reportlab.lib.enums import TA_CENTER
+
+    BLUE = colors.HexColor("#0ea5e9")
+    DARK = colors.HexColor("#1e293b")
+    LIGHT= colors.HexColor("#f1f5f9")
+    MID  = colors.HexColor("#94a3b8")
+    GREEN= colors.HexColor("#22c55e")
+    YEL  = colors.HexColor("#f59e0b")
+    ORG  = colors.HexColor("#f97316")
+    RED  = colors.HexColor("#ef4444")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    story = []
+
+    # Header
+    story.append(Paragraph("CV PRO",
+        ParagraphStyle("h",fontSize=20,textColor=BLUE,fontName="Helvetica-Bold")))
+    story.append(Paragraph("Contrast Sensitivity Function Report",
+        ParagraphStyle("s",fontSize=9,textColor=MID,fontName="Helvetica",spaceAfter=4)))
+    story.append(HRFlowable(width="100%",thickness=1,color=BLUE))
+    story.append(Spacer(1,0.4*cm))
+
+    # Patient info
+    pt = [[patient_name, f"Age: {patient_age} yrs · {patient_gender.capitalize()}",
+           f"MRN: {patient_mrn or '—'}",
+           f"Date: {datetime.date.today().strftime('%d %b %Y')}"]]
+    pt_t = Table(pt, colWidths=[5*cm,5*cm,4*cm,4*cm])
+    pt_t.setStyle(TableStyle([
+        ("FONTNAME",(0,0),(-1,-1),"Helvetica"),
+        ("FONTNAME",(0,0),(0,0),"Helvetica-Bold"),
+        ("FONTSIZE",(0,0),(-1,-1),9),
+        ("BACKGROUND",(0,0),(-1,-1),LIGHT),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+        ("LEFTPADDING",(0,0),(-1,-1),8),
+        ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#e2e8f0")),
+    ]))
+    story.append(pt_t)
+    story.append(Spacer(1,0.5*cm))
+
+    # Chart
+    if tests:
+        fig, ax = plt.subplots(figsize=(8,4.2), dpi=140)
+        xi = np.arange(4)
+        band = get_norm_band("20-55" if patient_age < 56 else "56-75")
+        ax.fill_between(xi, band["lower"], band["upper"],
+                        color="#22c55e", alpha=0.12, label="Normal range (±1 SD)")
+        ax.plot(xi, band["mean"], color="#22c55e", lw=1, ls="--", alpha=0.5)
+        pal = ["#0ea5e9","#f97316","#8b5cf6","#10b981"]
+        ls_map = {"OD":"-","OS":"--"}
+        for i,t in enumerate(tests):
+            lv = [t.get(f"log_{r.lower()}") for r in ROW_LABELS]
+            px2, py = zip(*[(j,v) for j,v in enumerate(lv) if v is not None]) if any(v is not None for v in lv) else ([],[])
+            if py:
+                ax.plot(list(px2), list(py), color=pal[i%4],
+                        ls=ls_map.get(t["eye"],"-"), lw=2.2,
+                        marker="o", ms=7, markerfacecolor="white", markeredgewidth=2,
+                        label=f"{t['eye']} · {t.get('visit_label') or t['visit_date']}")
+        ax.set_xticks(xi); ax.set_xticklabels([f"{f} cpd" for f in SPATIAL_FREQS])
+        ax.set_ylim(0,2.6); ax.set_ylabel("Log Contrast Sensitivity")
+        ax.set_xlabel("Spatial Frequency (cpd)")
+        ax.grid(True,color="#e2e8f0",lw=0.8); ax.spines[["top","right"]].set_visible(False)
+        ax.legend(fontsize=8); plt.tight_layout()
+        chart_buf = io.BytesIO()
+        plt.savefig(chart_buf, format="png", bbox_inches="tight"); plt.close(fig)
+        chart_buf.seek(0)
+        story.append(KeepTogether([
+            Paragraph("Contrast Sensitivity Function Curve",
+                ParagraphStyle("sec",fontSize=11,textColor=DARK,fontName="Helvetica-Bold",spaceAfter=6)),
+            RLImage(chart_buf, width=16*cm, height=9*cm),
+        ]))
+        story.append(Spacer(1,0.5*cm))
+
+    # Per-test tables
+    story.append(Paragraph("Detailed Scores",
+        ParagraphStyle("sec",fontSize=11,textColor=DARK,fontName="Helvetica-Bold",spaceAfter=8)))
+
+    for t in tests:
+        aulcsf_val = t.get("aulcsf")
+        interp,_ = interpret_aulcsf(aulcsf_val)
+        story.append(Paragraph(
+            f"<b>{t['eye']}</b> · {t.get('visit_label') or ''} · {t['visit_date']}",
+            ParagraphStyle("te",fontSize=10,fontName="Helvetica",spaceAfter=4)))
+        hdr = [["Row","Freq","Score","Log CS","Status"]]
+        rows_data = []
+        for row in ROW_LABELS:
+            sc = t.get(f"score_{row.lower()}")
+            lv = t.get(f"log_{row.lower()}")
+            st2 = ("Good" if lv and lv>=1.70 else
+                   "Borderline" if lv and lv>=1.40 else
+                   "Reduced" if lv else "Not seen")
+            rows_data.append([row, ROW_NAMES[row], str(sc) if sc else "0",
+                               f"{lv:.2f}" if lv else "—", st2])
+        tbl = Table(hdr+rows_data, colWidths=[1.5*cm,3*cm,3*cm,3*cm,4.5*cm])
+        tbl.setStyle(TableStyle([
+            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(0,1),(-1,-1),"Helvetica"),
+            ("FONTSIZE",(0,0),(-1,-1),9),
+            ("BACKGROUND",(0,0),(-1,0),DARK),("TEXTCOLOR",(0,0),(-1,0),colors.white),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[LIGHT,colors.white]),
+            ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#e2e8f0")),
+            ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
+            ("LEFTPADDING",(0,0),(-1,-1),6),("ALIGN",(2,0),(-1,-1),"CENTER"),
+        ]))
+        story.append(tbl)
+        arow = [[f"AULCSF: {aulcsf_val:.3f}" if aulcsf_val else "AULCSF: —",
+                 interp,
+                 f"Notes: {t.get('notes') or '—'}"]]
+        atbl = Table(arow, colWidths=[4*cm,4*cm,10*cm])
+        atbl.setStyle(TableStyle([
+            ("FONTNAME",(0,0),(0,0),"Helvetica-Bold"),("FONTNAME",(1,0),(-1,0),"Helvetica"),
+            ("FONTSIZE",(0,0),(-1,-1),9),("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#f0f9ff")),
+            ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#bae6fd")),
+            ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
+            ("LEFTPADDING",(0,0),(-1,-1),6),
+        ]))
+        story.append(atbl)
+        story.append(Spacer(1,0.4*cm))
+
+    # Footer
+    story.append(HRFlowable(width="100%",thickness=0.5,color=MID))
+    story.append(Spacer(1,0.2*cm))
+    story.append(Paragraph(
+        f"CV PRO · Generated {datetime.datetime.now().strftime('%d %b %Y %H:%M')} · "
+        "Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al.",
+        ParagraphStyle("ft",fontSize=7,textColor=MID,alignment=TA_CENTER)))
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SESSION STATE INIT
+# ══════════════════════════════════════════════════════════════════════════════
 def init_state():
-    if "patients" not in st.session_state:
-        st.session_state.patients = {}   # {mrn_or_name: {...}}
-    if "active_patient" not in st.session_state:
-        st.session_state.active_patient = None
-    if "tests" not in st.session_state:
-        st.session_state.tests = {}      # {patient_key: [test_dict, ...]}
+    defaults = {
+        "patients": {}, "active_patient": None, "tests": {},
+        "screen_dpi": 96, "distance_cm": 200,
+        "screen_valid": validate_screen(96, 200),
+        "test_row_idx": 0, "test_score_idx": 0,
+        "test_answers": {}, "test_scores": {},
+        "test_grating_pos": {}, "test_done": False,
+        "test_started": False,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
 init_state()
 
-
-# ── Sidebar — Patient management ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR
+# ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("## 👁️ CV PRO")
     st.caption("Contrast Sensitivity Analyser")
     st.divider()
 
-    st.markdown("### Add Patient")
-    with st.form("add_patient_form", clear_on_submit=True):
-        p_name   = st.text_input("Full Name *", placeholder="e.g. Ramesh Kumar")
-        p_age    = st.number_input("Age *", min_value=1, max_value=120, value=45, step=1)
-        p_gender = st.selectbox("Gender *", ["Male", "Female", "Other"])
-        p_mrn    = st.text_input("MRN / ID", placeholder="e.g. OPH-2026-001")
-        add_btn  = st.form_submit_button("➕ Add Patient", use_container_width=True)
+    # ── Screen setup (always visible) ─────────────────────────────────────────
+    st.markdown("### 🖥️ Screen Setup")
+    screen_choice = st.selectbox("Screen type", list(COMMON_SCREENS.keys()), key="screen_choice")
+    if screen_choice == "Custom (enter DPI)":
+        dpi = st.number_input("DPI / PPI", min_value=60, max_value=600, value=96, step=1)
+    else:
+        dpi = COMMON_SCREENS[screen_choice]
+        st.caption(f"DPI: **{dpi}**")
 
-        if add_btn:
-            if not p_name.strip():
-                st.error("Name is required.")
-            else:
-                key = p_mrn.strip() if p_mrn.strip() else p_name.strip()
+    dist_cm = st.number_input("Testing distance (cm)", min_value=50, max_value=400,
+                               value=200, step=10, key="distance_cm_input")
+
+    val = validate_screen(dpi, dist_cm)
+    st.session_state["screen_dpi"] = dpi
+    st.session_state["distance_cm"] = dist_cm
+    st.session_state["screen_valid"] = val
+
+    if val["overall_ok"]:
+        st.success(f"✅ Valid · {val['ppd']} px/°")
+    else:
+        bad = [r for r,rv in val["rows"].items() if not rv["ok"]]
+        st.warning(f"⚠️ Rows {', '.join(bad)} need larger distance")
+
+    with st.expander("Circle sizes"):
+        for row in ROW_LABELS:
+            rv = val["rows"][row]
+            icon = "✅" if rv["ok"] else "⚠️"
+            st.caption(f"{icon} Row {row} ({rv['freq']}cpd): **{rv['diam_px']}px**")
+
+    st.divider()
+
+    # ── Add patient ───────────────────────────────────────────────────────────
+    st.markdown("### Add Patient")
+    with st.form("add_patient", clear_on_submit=True):
+        p_name   = st.text_input("Full Name *", placeholder="e.g. Ramesh Kumar")
+        p_age    = st.number_input("Age *", min_value=1, max_value=120, value=45)
+        p_gender = st.selectbox("Gender *", ["Male","Female","Other"])
+        p_mrn    = st.text_input("MRN / ID", placeholder="OPH-2026-001")
+        if st.form_submit_button("➕ Add Patient", use_container_width=True):
+            if p_name.strip():
+                key = p_mrn.strip() or p_name.strip()
                 st.session_state.patients[key] = {
-                    "name": p_name.strip(), "age": int(p_age),
-                    "gender": p_gender, "mrn": p_mrn.strip(),
+                    "name":p_name.strip(),"age":int(p_age),
+                    "gender":p_gender,"mrn":p_mrn.strip()
                 }
                 if key not in st.session_state.tests:
                     st.session_state.tests[key] = []
                 st.session_state.active_patient = key
-                st.success(f"Patient **{p_name}** added.")
+                st.success(f"Added {p_name}")
 
     st.divider()
+
+    # ── Select patient ────────────────────────────────────────────────────────
     st.markdown("### Select Patient")
     if st.session_state.patients:
-        patient_keys = list(st.session_state.patients.keys())
-        patient_labels = [
-            f"{st.session_state.patients[k]['name']} ({k})"
-            for k in patient_keys
-        ]
-        sel_idx = st.selectbox(
-            "Active patient",
-            range(len(patient_keys)),
-            format_func=lambda i: patient_labels[i],
-            key="patient_selector"
-        )
-        st.session_state.active_patient = patient_keys[sel_idx]
+        keys = list(st.session_state.patients.keys())
+        labels = [f"{st.session_state.patients[k]['name']}" for k in keys]
+        idx = st.selectbox("Patient", range(len(keys)),
+                           format_func=lambda i: labels[i], key="patient_selector")
+        st.session_state.active_patient = keys[idx]
     else:
-        st.info("No patients yet. Add one above.")
+        st.info("No patients yet.")
 
     st.divider()
-    # Screen calibration in sidebar
-    render_calibration_ui()
-    st.divider()
-    st.caption("Protocol: VectorVision CSV-1000 · 85 cd/m² · 4 spatial frequencies")
+    st.caption("VectorVision CSV-1000 protocol · 4 spatial frequencies")
 
-
-# ── Main content ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN AREA
+# ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.active_patient:
     st.markdown("## Welcome to CV PRO")
     st.markdown("""
-    **CV PRO** is a clinical contrast sensitivity scoring tool based on the
-    [VectorVision CSV-1000](https://www.vectorvision.com/csv1000-contrast-sensitivity/) protocol.
+**CV PRO** is a clinical contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol.
 
-    **Getting started:**
-    1. Add a patient using the sidebar
-    2. Record CS test scores (A, B, C, D — scores 1–8)
-    3. View the automated CSF curve with age-matched normal ranges
-    4. Download a full clinical PDF report
-
-    ---
-    *Spatial frequencies tested: 3, 6, 12, 18 cycles per degree*
+**Getting started:**
+1. **Configure your screen** in the sidebar — select your monitor type and testing distance
+2. **Add a patient** using the sidebar form
+3. Go to **🔬 Live Test** tab to run the grating test on screen
+4. Or go to **📝 Manual Entry** to type in scores from your physical chart
+5. **📈 CS Graph** shows the contrast sensitivity curve with age-norm bands
+6. **⬇️ Download PDF** for the full clinical report
     """)
+    st.info("👈 Start by configuring your screen setup and adding a patient in the sidebar.")
     st.stop()
 
-# ── Active patient ────────────────────────────────────────────────────────────
 pk = st.session_state.active_patient
 patient = st.session_state.patients[pk]
 tests_list = st.session_state.tests.get(pk, [])
 
-# Header
-col_title, col_actions = st.columns([3, 1])
-with col_title:
+# Patient header
+col_h, col_dl = st.columns([3, 1])
+with col_h:
     st.markdown(f"## {patient['name']}")
     st.caption(f"{patient['age']} yrs · {patient['gender']}" +
-               (f" · `{patient['mrn']}`" if patient['mrn'] else ""))
-
-with col_actions:
+               (f" · `{patient['mrn']}`" if patient.get('mrn') else ""))
+with col_dl:
     if tests_list:
         pdf_bytes = generate_pdf(
-            patient_name   = patient["name"],
-            patient_age    = patient["age"],
-            patient_gender = patient["gender"],
-            patient_mrn    = patient.get("mrn", ""),
-            tests          = tests_list,
+            patient["name"], patient["age"],
+            patient["gender"], patient.get("mrn",""), tests_list
         )
         st.download_button(
-            label="⬇️ Download PDF Report",
-            data=pdf_bytes,
+            "⬇️ Download PDF Report", data=pdf_bytes,
             file_name=f"CVPRO_{patient['name'].replace(' ','_')}_{datetime.date.today()}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
+            mime="application/pdf", use_container_width=True,
         )
 
 st.divider()
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_live, tab_record, tab_chart, tab_history = st.tabs(["🔬 Live Test", "📝 Manual Entry", "📈 CS Graph", "📋 Test History"])
+# Tabs
+tab_live, tab_manual, tab_chart, tab_history = st.tabs(
+    ["🔬 Live Test", "📝 Manual Entry", "📈 CS Graph", "📋 Test History"]
+)
 
-
-# ════════════════════════════════════════════════════════
-# TAB 0 — Live Grating Test
-# ════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — LIVE TEST
+# ══════════════════════════════════════════════════════════════════════════════
 with tab_live:
-    st.markdown('<p class="section-header">Live Sinusoidal Grating Test</p>',
+    dpi      = st.session_state["screen_dpi"]
+    dist_cm  = st.session_state["distance_cm"]
+    scr_val  = st.session_state["screen_valid"]
+
+    st.markdown('<p class="section-hdr">🔬 Live Sinusoidal Grating Test</p>',
                 unsafe_allow_html=True)
 
-    # Check screen calibration
-    val = st.session_state.get("screen_valid", {})
-    if not val:
-        st.info("Configure your screen setup in the sidebar first, then start the test.")
+    # Screen status banner
+    if scr_val["overall_ok"]:
+        st.success(f"Screen: {dpi} DPI · {dist_cm} cm · {scr_val['ppd']} px/° — All frequencies valid ✅")
     else:
-        screen_ok = val.get("overall_ok", False)
-        if not screen_ok:
-            st.warning(
-                "⚠️ Your current screen/distance setup may not accurately render "
-                "high spatial frequencies. Adjust the distance in the sidebar."
-            )
+        st.warning(f"⚠️ Screen setup may not render all frequencies accurately. Adjust distance in sidebar.")
 
-        # Luminance guidance
-        with st.expander("📋 Pre-test checklist", expanded=False):
-            st.markdown("""
-            Before testing, ensure:
-            - **Room lighting**: ~85 cd/m² (standard office fluorescent lighting)
-            - **Screen brightness**: Set to 70–80% for most LCD monitors
-            - **Patient correction**: Best corrected vision in the eye being tested
-            - **Testing distance**: Patient seated at the configured distance
-            - **One eye at a time**: Occlude the other eye
-            - **Adaptation**: Allow 30 seconds in room lighting before testing
-            """)
+    with st.expander("📋 Pre-test checklist — expand before starting"):
+        st.markdown("""
+| Item | Requirement |
+|---|---|
+| Room lighting | ~85 cd/m² (normal fluorescent office light) |
+| Screen brightness | 70–80% |
+| Screen position | Eye level, no glare |
+| Patient correction | Best corrected — glasses/contacts on |
+| Eye being tested | One eye occluded with palm or occluder |
+| Adaptation | 30 seconds in room light before starting |
+| Testing distance | Patient at the distance set in sidebar |
+        """)
 
-        render_test_ui(
-            patient_name=patient.get("name", "Patient"),
-            patient_age=patient.get("age", 40)
-        )
+    st.divider()
 
+    # ── Test state machine ────────────────────────────────────────────────────
+    if not st.session_state.test_started:
+        eye_choice = st.selectbox("Eye to test", ["OD (Right eye)","OS (Left eye)"],
+                                  key="live_eye_choice")
+        visit_label = st.text_input("Visit label", placeholder="e.g. Pre-op, Post-op 1M",
+                                    key="live_visit_label")
+        if st.button("▶️ Start Test", type="primary", use_container_width=False):
+            st.session_state.test_started    = True
+            st.session_state.test_row_idx    = 0
+            st.session_state.test_score_idx  = 0
+            st.session_state.test_answers    = {}
+            st.session_state.test_scores     = {}
+            st.session_state.test_done       = False
+            st.session_state.test_eye        = eye_choice.split()[0]
+            st.session_state.test_visit_label= visit_label
+            # Pre-randomise positions
+            pos = {}
+            for row in ROW_LABELS:
+                for sc in SCORES_ALL:
+                    pos[(row,sc)] = random.choice(["top","bottom"])
+            st.session_state.test_grating_pos = pos
+            st.rerun()
 
-# ════════════════════════════════════════════════════════
-# TAB 1 — Manual Score Entry
-# ════════════════════════════════════════════════════════
-with tab_record:
-    st.markdown('<p class="section-header">Record New CS Test</p>', unsafe_allow_html=True)
+    elif st.session_state.test_done:
+        # ── Results ───────────────────────────────────────────────────────────
+        st.success("✅ Test complete!")
+        scores_idx = st.session_state.test_scores  # {row: last_correct_idx (0=S)}
+        final = {}
+        log_vals = []
+        for row in ROW_LABELS:
+            idx = scores_idx.get(row, 0)
+            # idx 0 means only sample (S) seen or nothing → clinical score 0
+            # idx ≥1 means scored 1..8
+            clinical = idx  # idx directly maps: 0→0, 1→score1 .. 8→score8
+            final[row] = clinical
+            log_vals.append(score_to_log(row, clinical))
 
-    with st.form("record_test_form"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            visit_date  = st.date_input("Visit Date", value=datetime.date.today())
-        with c2:
-            eye = st.selectbox("Eye", ["OD (Right)", "OS (Left)"])
-            eye_code = eye.split()[0]  # 'OD' or 'OS'
-        with c3:
-            visit_label = st.text_input("Visit Label", placeholder="e.g. Pre-op, Post-op 1M")
-
-        st.markdown("#### CV PRO Scores")
-        st.caption("Enter the last correct score (1–8) for each row. Enter 0 if the patient could not see any grating.")
-
-        score_cols = st.columns(4)
-        scores = {}
-        for i, row in enumerate(ROW_LABELS):
-            with score_cols[i]:
-                st.markdown(f"**Row {row}**")
-                st.caption(ROW_NAMES[row])
-                scores[row] = st.selectbox(
-                    f"Score {row}",
-                    options=list(range(9)),
-                    format_func=lambda x: "0 — not seen" if x == 0 else str(x),
-                    key=f"score_{row}",
-                    label_visibility="collapsed",
-                )
-
-        notes = st.text_area("Clinical Notes", placeholder="e.g. Dense NS4 cataract · Post Phaco + Monofocal IOL")
-
-        submitted = st.form_submit_button("✅ Save Test", use_container_width=True, type="primary")
-
-    if submitted:
-        log_vals = {row: score_to_log(row, scores[row]) for row in ROW_LABELS}
-        aulcsf = calc_aulcsf([log_vals[r] for r in ROW_LABELS])
+        aulcsf = calc_aulcsf(log_vals)
         interp_label, _ = interpret_aulcsf(aulcsf)
 
-        test_record = {
-            "visit_date":  str(visit_date),
-            "visit_label": visit_label.strip(),
-            "eye":         eye_code,
-            "score_a": scores["A"], "score_b": scores["B"],
-            "score_c": scores["C"], "score_d": scores["D"],
-            "log_a": log_vals["A"], "log_b": log_vals["B"],
-            "log_c": log_vals["C"], "log_d": log_vals["D"],
-            "aulcsf": aulcsf,
-            "notes":  notes.strip(),
-        }
-        st.session_state.tests[pk].insert(0, test_record)
+        c1,c2,c3,c4 = st.columns(4)
+        badge_map = {"Normal":"🟢","Mildly reduced":"🟡",
+                     "Moderately reduced":"🟠","Severely reduced":"🔴"}
+        for col, row in zip([c1,c2,c3,c4], ROW_LABELS):
+            lv = score_to_log(row, final[row])
+            col.metric(f"Row {row} · {ROW_NAMES[row]}",
+                       str(final[row]) if final[row] else "0",
+                       f"logCS {lv:.2f}" if lv else "Not seen")
 
-        # ── Live preview ──
-        st.success("Test saved!")
-        pc1, pc2, pc3, pc4 = st.columns(4)
-        for col, row in zip([pc1, pc2, pc3, pc4], ROW_LABELS):
-            lv = log_vals[row]
-            sc = scores[row]
-            col.metric(
-                label=f"Row {row} · {ROW_NAMES[row]}",
-                value=f"{lv:.2f}" if lv else "—",
-                delta=f"Score {sc}" if sc else "Not seen",
-            )
+        if aulcsf:
+            st.markdown(f"### AULCSF: `{aulcsf:.3f}` "
+                        f"{badge_map.get(interp_label,'⚪')} {interp_label}")
 
-        if aulcsf is not None:
-            badge_colors = {
-                "Normal": "🟢", "Mildly reduced": "🟡",
-                "Moderately reduced": "🟠", "Severely reduced": "🔴"
+        col_save, col_restart = st.columns(2)
+        with col_save:
+            if st.button("💾 Save to Patient Record", type="primary", use_container_width=True):
+                test_rec = {
+                    "visit_date":  str(datetime.date.today()),
+                    "visit_label": st.session_state.get("test_visit_label",""),
+                    "eye":         st.session_state.get("test_eye","OD"),
+                    "score_a": final["A"],"score_b": final["B"],
+                    "score_c": final["C"],"score_d": final["D"],
+                    "log_a": score_to_log("A",final["A"]),
+                    "log_b": score_to_log("B",final["B"]),
+                    "log_c": score_to_log("C",final["C"]),
+                    "log_d": score_to_log("D",final["D"]),
+                    "aulcsf": aulcsf, "notes": "",
+                }
+                st.session_state.tests[pk].insert(0, test_rec)
+                st.session_state.test_started = False
+                st.session_state.test_done    = False
+                st.success("Saved! Switch to CS Graph or Test History to view.")
+        with col_restart:
+            if st.button("🔄 Restart Test", use_container_width=True):
+                st.session_state.test_started = False
+                st.session_state.test_done    = False
+                st.rerun()
+
+    else:
+        # ── Show current grating pair ─────────────────────────────────────────
+        row_idx   = st.session_state.test_row_idx
+        score_idx = st.session_state.test_score_idx
+
+        if row_idx >= len(ROW_LABELS):
+            st.session_state.test_done = True
+            st.rerun()
+
+        row   = ROW_LABELS[row_idx]
+        score = SCORES_ALL[score_idx]
+        freq  = FREQS[row]
+        diam  = circle_diam_px(freq, dpi, dist_cm, CYCLES_IN_MASTER[row])
+        pos   = st.session_state.test_grating_pos.get((row,score), "top")
+
+        # Progress bar
+        done = row_idx * 9 + score_idx
+        st.progress(done / 36, text=f"Row {row} ({ROW_NAMES[row]}) — Position {score}/8")
+
+        # Load images
+        grating_img = get_grating(row, score, diam)
+        blank_img   = get_blank(row, diam)
+        top_img    = grating_img if pos == "top"    else blank_img
+        bottom_img = grating_img if pos == "bottom" else blank_img
+
+        # Display
+        st.markdown(f"### Which circle has the **stripes**?")
+        st.caption(f"Row {row} · {freq} cpd · Position {score} · "
+                   f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f}")
+
+        _, col_top, _, col_bot, _ = st.columns([1, 3, 1, 3, 1])
+        with col_top:
+            st.markdown("**Top**")
+            st.image(top_img, use_container_width=True)
+        with col_bot:
+            st.markdown("**Bottom**")
+            st.image(bottom_img, use_container_width=True)
+
+        # Response buttons
+        st.markdown("#### Patient response:")
+        b1, b2, b3, b4 = st.columns(4)
+
+        def record(response):
+            correct = response == pos
+            st.session_state.test_answers[(row, score)] = {
+                "response": response, "correct": correct}
+            if correct:
+                st.session_state.test_scores[row] = score_idx
+            nxt = score_idx + 1
+            if nxt >= len(SCORES_ALL):
+                st.session_state.test_row_idx  += 1
+                st.session_state.test_score_idx = 0
+            else:
+                st.session_state.test_score_idx = nxt
+
+        with b1:
+            if st.button("⬆️ Top", use_container_width=True, key=f"t_{row}{score}"):
+                record("top"); st.rerun()
+        with b2:
+            if st.button("⬇️ Bottom", use_container_width=True, key=f"b_{row}{score}"):
+                record("bottom"); st.rerun()
+        with b3:
+            if st.button("❌ Neither", use_container_width=True, key=f"n_{row}{score}"):
+                record("neither"); st.rerun()
+        with b4:
+            if st.button("⏭️ Next Row", use_container_width=True, key=f"s_{row}{score}"):
+                st.session_state.test_row_idx  += 1
+                st.session_state.test_score_idx = 0
+                st.rerun()
+
+        if score == "S":
+            st.info("ℹ️ This is the **sample grating** — the stripes are clearly visible. "
+                    "Use this to show the patient what to look for.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — MANUAL ENTRY
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_manual:
+    st.markdown('<p class="section-hdr">📝 Manual Score Entry</p>', unsafe_allow_html=True)
+    with st.form("manual_entry", clear_on_submit=True):
+        c1,c2,c3 = st.columns(3)
+        with c1: visit_date  = st.date_input("Date", value=datetime.date.today())
+        with c2:
+            eye = st.selectbox("Eye", ["OD (Right)","OS (Left)"])
+            eye_code = eye.split()[0]
+        with c3: visit_label = st.text_input("Visit Label", placeholder="Pre-op / Post-op 1M")
+
+        st.markdown("#### Scores — enter last correct position for each row")
+        sc1,sc2,sc3,sc4 = st.columns(4)
+        scores = {}
+        for col, row in zip([sc1,sc2,sc3,sc4], ROW_LABELS):
+            with col:
+                st.markdown(f"**Row {row}** · {ROW_NAMES[row]}")
+                scores[row] = st.selectbox(
+                    f"Score {row}", list(range(9)),
+                    format_func=lambda x: "0 — not seen" if x==0 else str(x),
+                    key=f"m_score_{row}", label_visibility="collapsed")
+                lv = score_to_log(row, scores[row])
+                if lv: st.caption(f"logCS: **{lv:.2f}**")
+
+        notes = st.text_area("Clinical Notes", placeholder="e.g. NS4 cataract · Post Phaco")
+
+        if st.form_submit_button("✅ Save", use_container_width=True, type="primary"):
+            log_vals = [score_to_log(r, scores[r]) for r in ROW_LABELS]
+            aulcsf = calc_aulcsf(log_vals)
+            rec = {
+                "visit_date":str(visit_date),"visit_label":visit_label.strip(),"eye":eye_code,
+                "score_a":scores["A"],"score_b":scores["B"],"score_c":scores["C"],"score_d":scores["D"],
+                "log_a":log_vals[0],"log_b":log_vals[1],"log_c":log_vals[2],"log_d":log_vals[3],
+                "aulcsf":aulcsf,"notes":notes.strip(),
             }
-            badge = badge_colors.get(interp_label, "⚪")
-            st.markdown(f"### AULCSF: `{aulcsf:.3f}` {badge} {interp_label}")
+            st.session_state.tests[pk].insert(0, rec)
+            interp,_ = interpret_aulcsf(aulcsf)
+            st.success(f"Saved · AULCSF: {aulcsf:.3f} — {interp}" if aulcsf else "Saved")
 
-
-# ════════════════════════════════════════════════════════
-# TAB 2 — CS Graph
-# ════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — CS GRAPH
+# ══════════════════════════════════════════════════════════════════════════════
 with tab_chart:
-    st.markdown('<p class="section-header">Contrast Sensitivity Function (CSF) Curve</p>',
+    st.markdown('<p class="section-hdr">📈 Contrast Sensitivity Function Curve</p>',
                 unsafe_allow_html=True)
-
     if not tests_list:
         st.info("Record at least one test to generate the CSF curve.")
     else:
-        # ── Options ──────────────────────────────────────────────────────────
-        opt_col1, opt_col2 = st.columns([2, 1])
-        with opt_col1:
-            test_labels = [
-                f"{t['eye']} · {t.get('visit_label') or 'Visit'} · {t['visit_date']}"
-                for t in tests_list
-            ]
-            selected_indices = st.multiselect(
-                "Select tests to display (max 4)",
-                options=range(len(tests_list)),
-                default=list(range(min(2, len(tests_list)))),
-                format_func=lambda i: test_labels[i],
-                max_selections=4,
-            )
-        with opt_col2:
-            show_older_norm = st.checkbox("Show 56–75 yr norm band", value=True)
-            show_younger_norm = st.checkbox("Show 20–55 yr norm band", value=True)
+        t_labels = [f"{t['eye']} · {t.get('visit_label') or 'Visit'} · {t['visit_date']}"
+                    for t in tests_list]
+        sel = st.multiselect("Select tests to display (max 4)", range(len(tests_list)),
+                             default=list(range(min(2, len(tests_list)))),
+                             format_func=lambda i: t_labels[i], max_selections=4)
 
-        if not selected_indices:
-            st.warning("Select at least one test to plot.")
-        else:
-            selected_tests = [tests_list[i] for i in selected_indices]
+        show_y = st.checkbox("Show 20–55 yr norm band", value=True)
+        show_o = st.checkbox("Show 56–75 yr norm band", value=True)
 
-            # ── Build chart ───────────────────────────────────────────────────
-            fig, ax = plt.subplots(figsize=(10, 5.5), dpi=130)
-            fig.patch.set_facecolor("white")
-            ax.set_facecolor("#f8fafc")
+        if sel:
+            fig, ax = plt.subplots(figsize=(10,5.5), dpi=130)
+            ax.set_facecolor("#f8fafc"); fig.patch.set_facecolor("white")
+            xi = np.arange(4)
+            if show_y:
+                b = get_norm_band("20-55")
+                ax.fill_between(xi,b["lower"],b["upper"],color="#22c55e",alpha=0.13,label="Normal 20–55 yrs")
+                ax.plot(xi,b["mean"],color="#22c55e",lw=1.2,ls="--",alpha=0.6)
+            if show_o:
+                b = get_norm_band("56-75")
+                ax.fill_between(xi,b["lower"],b["upper"],color="#94a3b8",alpha=0.10,label="Normal 56–75 yrs")
+                ax.plot(xi,b["mean"],color="#94a3b8",lw=1.2,ls="--",alpha=0.5)
 
-            xi = np.arange(len(SPATIAL_FREQS))
+            pal = ["#0ea5e9","#f97316","#8b5cf6","#10b981"]
+            ls_map = {"OD":"-","OS":"--"}
+            for i,ti in enumerate(sel):
+                t = tests_list[ti]
+                lv = [t.get(f"log_{r.lower()}") for r in ROW_LABELS]
+                pts = [(j,v) for j,v in enumerate(lv) if v is not None]
+                if pts:
+                    px2,py = zip(*pts)
+                    ax.plot(list(px2),list(py),color=pal[i%4],
+                            ls=ls_map.get(t["eye"],"-"),lw=2.5,
+                            marker="o",ms=8,markerfacecolor="white",markeredgewidth=2.2,
+                            label=f"{t['eye']} — {t.get('visit_label') or 'Visit'} ({t['visit_date']})",zorder=5)
+                    for px3,py3 in pts:
+                        ax.annotate(f"{py3:.2f}",(px3,py3),
+                                    textcoords="offset points",xytext=(0,10),
+                                    fontsize=8,color=pal[i%4],ha="center",fontweight="600")
 
-            # Norm bands
-            if show_younger_norm:
-                band_y = get_norm_band("20-55")
-                ax.fill_between(xi, band_y["lower"], band_y["upper"],
-                                color="#22c55e", alpha=0.13, label="Normal 20–55 yrs (±1 SD)")
-                ax.plot(xi, band_y["mean"], color="#22c55e", lw=1.2, ls="--", alpha=0.6)
-
-            if show_older_norm:
-                band_o = get_norm_band("56-75")
-                ax.fill_between(xi, band_o["lower"], band_o["upper"],
-                                color="#94a3b8", alpha=0.10, label="Normal 56–75 yrs (±1 SD)")
-                ax.plot(xi, band_o["mean"], color="#94a3b8", lw=1.2, ls="--", alpha=0.5)
-
-            # Patient lines
-            palette = ["#0ea5e9", "#f97316", "#8b5cf6", "#10b981"]
-            line_styles = {"OD": "-", "OS": "--"}
-            for idx, t in enumerate(selected_tests):
-                log_vals = [t.get(f"log_{r.lower()}") for r in ROW_LABELS]
-                plot_x, plot_y = [], []
-                for j, v in enumerate(log_vals):
-                    if v is not None:
-                        plot_x.append(j)
-                        plot_y.append(v)
-                if not plot_y:
-                    continue
-                color = palette[idx % len(palette)]
-                ls = line_styles.get(t["eye"], "-")
-                label = f"{t['eye']} — {t.get('visit_label') or 'Visit'} ({t['visit_date']})"
-                ax.plot(plot_x, plot_y,
-                        color=color, ls=ls, lw=2.5,
-                        marker="o", ms=8,
-                        markerfacecolor="white", markeredgewidth=2.2,
-                        label=label, zorder=5)
-
-                # Annotate log values
-                for j, (px, py) in enumerate(zip(plot_x, plot_y)):
-                    ax.annotate(f"{py:.2f}", (px, py),
-                                textcoords="offset points", xytext=(0, 10),
-                                fontsize=7.5, color=color, ha="center", fontweight="600")
-
-            ax.set_xticks(xi)
-            ax.set_xticklabels([f"{f} cpd" for f in SPATIAL_FREQS], fontsize=11)
-            ax.set_ylim(0, 2.7)
-            ax.set_yticks([0, 0.5, 1.0, 1.5, 2.0, 2.5])
-            ax.set_yticklabels([f"{v:.1f}" for v in [0, 0.5, 1.0, 1.5, 2.0, 2.5]], fontsize=10)
-            ax.set_ylabel("Log Contrast Sensitivity", fontsize=11)
-            ax.set_xlabel("Spatial Frequency (Cycles per Degree)", fontsize=11)
-            ax.grid(True, color="#e2e8f0", linewidth=0.8, alpha=0.8)
-            ax.spines[["top", "right"]].set_visible(False)
-            ax.legend(fontsize=9, loc="upper right", framealpha=0.95,
-                      edgecolor="#e2e8f0", fancybox=True)
-            ax.set_title(
-                f"CSF Curve — {patient['name']} ({patient['age']} yrs)",
-                fontsize=12, fontweight="600", color="#1e293b", pad=12
-            )
+            ax.set_xticks(xi); ax.set_xticklabels([f"{f} cpd" for f in SPATIAL_FREQS],fontsize=11)
+            ax.set_ylim(0,2.7); ax.set_yticks([0,.5,1,1.5,2,2.5])
+            ax.set_ylabel("Log Contrast Sensitivity",fontsize=11)
+            ax.set_xlabel("Spatial Frequency (Cycles per Degree)",fontsize=11)
+            ax.grid(True,color="#e2e8f0",lw=0.8,alpha=0.8)
+            ax.spines[["top","right"]].set_visible(False)
+            ax.legend(fontsize=9,loc="upper right",framealpha=0.95)
+            ax.set_title(f"{patient['name']} ({patient['age']} yrs)",fontsize=12,fontweight="600",color="#1e293b")
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
             plt.close(fig)
 
-            # ── AULCSF summary cards ──────────────────────────────────────────
-            st.markdown("#### AULCSF Summary")
-            badge_map = {
-                "Normal": ("🟢", "#dcfce7"),
-                "Mildly reduced": ("🟡", "#fef9c3"),
-                "Moderately reduced": ("🟠", "#ffedd5"),
-                "Severely reduced": ("🔴", "#fee2e2"),
-            }
-            aulcsf_cols = st.columns(len(selected_tests))
-            for col, t in zip(aulcsf_cols, selected_tests):
-                val = t.get("aulcsf")
-                label_txt = t.get("visit_label") or t["visit_date"]
-                interp_label, _ = interpret_aulcsf(val)
-                icon, bg = badge_map.get(interp_label, ("⚪", "#f1f5f9"))
-                col.metric(
-                    label=f"{t['eye']} · {label_txt}",
-                    value=f"{val:.3f}" if val is not None else "—",
-                    delta=f"{icon} {interp_label}",
-                )
+            st.markdown("#### AULCSF")
+            badge_map = {"Normal":"🟢","Mildly reduced":"🟡",
+                         "Moderately reduced":"🟠","Severely reduced":"🔴"}
+            cols = st.columns(len(sel))
+            for col,ti in zip(cols,sel):
+                t = tests_list[ti]
+                v = t.get("aulcsf")
+                interp,_ = interpret_aulcsf(v)
+                col.metric(f"{t['eye']} · {t.get('visit_label') or t['visit_date']}",
+                           f"{v:.3f}" if v else "—",
+                           f"{badge_map.get(interp,'⚪')} {interp}")
 
-
-# ════════════════════════════════════════════════════════
-# TAB 3 — Test History
-# ════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — TEST HISTORY
+# ══════════════════════════════════════════════════════════════════════════════
 with tab_history:
-    st.markdown('<p class="section-header">Test History</p>', unsafe_allow_html=True)
-
+    st.markdown('<p class="section-hdr">📋 Test History</p>', unsafe_allow_html=True)
     if not tests_list:
         st.info("No tests recorded yet.")
     else:
-        # Summary table
-        rows = []
+        rows_data = []
         for t in tests_list:
-            interp_label, _ = interpret_aulcsf(t.get("aulcsf"))
-            rows.append({
-                "Date":       t["visit_date"],
-                "Eye":        t["eye"],
-                "Visit":      t.get("visit_label") or "—",
-                "A (3cpd)":   f"{t['score_a']} → {t['log_a']:.2f}" if t.get("log_a") else "0",
-                "B (6cpd)":   f"{t['score_b']} → {t['log_b']:.2f}" if t.get("log_b") else "0",
-                "C (12cpd)":  f"{t['score_c']} → {t['log_c']:.2f}" if t.get("log_c") else "0",
-                "D (18cpd)":  f"{t['score_d']} → {t['log_d']:.2f}" if t.get("log_d") else "0",
-                "AULCSF":     f"{t['aulcsf']:.3f}" if t.get("aulcsf") is not None else "—",
-                "Interpretation": interp_label,
-                "Notes":      t.get("notes") or "—",
+            interp,_ = interpret_aulcsf(t.get("aulcsf"))
+            rows_data.append({
+                "Date": t["visit_date"], "Eye": t["eye"],
+                "Visit": t.get("visit_label") or "—",
+                "A (3cpd)":  f"{t['score_a']} → {t['log_a']:.2f}" if t.get("log_a") else "0",
+                "B (6cpd)":  f"{t['score_b']} → {t['log_b']:.2f}" if t.get("log_b") else "0",
+                "C (12cpd)": f"{t['score_c']} → {t['log_c']:.2f}" if t.get("log_c") else "0",
+                "D (18cpd)": f"{t['score_d']} → {t['log_d']:.2f}" if t.get("log_d") else "0",
+                "AULCSF": f"{t['aulcsf']:.3f}" if t.get("aulcsf") is not None else "—",
+                "Interpretation": interp,
+                "Notes": t.get("notes") or "—",
             })
-
-        df = pd.DataFrame(rows)
+        df = pd.DataFrame(rows_data)
         st.dataframe(df, use_container_width=True, hide_index=True)
-
-        # CSV download
         csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download as CSV",
-            data=csv,
-            file_name=f"CVPRO_{patient['name'].replace(' ','_')}_tests.csv",
-            mime="text/csv",
-        )
-
+        st.download_button("⬇️ Download CSV", csv,
+                           f"CVPRO_{patient['name'].replace(' ','_')}_tests.csv",
+                           "text/csv")
         st.markdown("---")
-        st.markdown("#### Delete a Test")
-        del_idx = st.selectbox(
-            "Select test to delete",
-            range(len(tests_list)),
-            format_func=lambda i: f"{tests_list[i]['eye']} · {tests_list[i].get('visit_label') or 'Visit'} · {tests_list[i]['visit_date']}"
-        )
-        if st.button("🗑️ Delete Selected Test", type="secondary"):
+        del_idx = st.selectbox("Select test to delete", range(len(tests_list)),
+                               format_func=lambda i: f"{tests_list[i]['eye']} · "
+                               f"{tests_list[i].get('visit_label') or 'Visit'} · "
+                               f"{tests_list[i]['visit_date']}")
+        if st.button("🗑️ Delete", type="secondary"):
             st.session_state.tests[pk].pop(del_idx)
-            st.success("Test deleted.")
             st.rerun()
 
-
-# ── Footer ────────────────────────────────────────────────────────────────────
+# Footer
 st.markdown("---")
-st.caption(
-    "CV PRO · Log CS values: [VectorVision CSV-1000 norms](https://www.vectorvision.com/csv1000-norms/) · "
-    "AULCSF: Applegate et al. method · "
-    "For clinical research use — not a substitute for calibrated hardware."
-)
+st.caption("CV PRO · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · For research use")
