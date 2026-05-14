@@ -1,0 +1,370 @@
+{
+  "A": {
+    "S": {
+      "file": "gratings/grating_AS.png",
+      "row": "A",
+      "score": "S",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 5,
+      "michelson_contrast": 0.2,
+      "log_cs": 0.699,
+      "cycles_in_master": 5
+    },
+    "1": {
+      "file": "gratings/grating_A1.png",
+      "row": "A",
+      "score": "1",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 10,
+      "michelson_contrast": 0.1,
+      "log_cs": 1.0,
+      "cycles_in_master": 5
+    },
+    "2": {
+      "file": "gratings/grating_A2.png",
+      "row": "A",
+      "score": "2",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 15,
+      "michelson_contrast": 0.066667,
+      "log_cs": 1.176,
+      "cycles_in_master": 5
+    },
+    "3": {
+      "file": "gratings/grating_A3.png",
+      "row": "A",
+      "score": "3",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 22,
+      "michelson_contrast": 0.045455,
+      "log_cs": 1.342,
+      "cycles_in_master": 5
+    },
+    "4": {
+      "file": "gratings/grating_A4.png",
+      "row": "A",
+      "score": "4",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 31,
+      "michelson_contrast": 0.032258,
+      "log_cs": 1.491,
+      "cycles_in_master": 5
+    },
+    "5": {
+      "file": "gratings/grating_A5.png",
+      "row": "A",
+      "score": "5",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 43,
+      "michelson_contrast": 0.023256,
+      "log_cs": 1.633,
+      "cycles_in_master": 5
+    },
+    "6": {
+      "file": "gratings/grating_A6.png",
+      "row": "A",
+      "score": "6",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 61,
+      "michelson_contrast": 0.016393,
+      "log_cs": 1.785,
+      "cycles_in_master": 5
+    },
+    "7": {
+      "file": "gratings/grating_A7.png",
+      "row": "A",
+      "score": "7",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 85,
+      "michelson_contrast": 0.011765,
+      "log_cs": 1.929,
+      "cycles_in_master": 5
+    },
+    "8": {
+      "file": "gratings/grating_A8.png",
+      "row": "A",
+      "score": "8",
+      "spatial_freq_cpd": 3,
+      "linear_cs": 120,
+      "michelson_contrast": 0.008333,
+      "log_cs": 2.079,
+      "cycles_in_master": 5
+    }
+  },
+  "B": {
+    "S": {
+      "file": "gratings/grating_BS.png",
+      "row": "B",
+      "score": "S",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 8,
+      "michelson_contrast": 0.125,
+      "log_cs": 0.903,
+      "cycles_in_master": 8
+    },
+    "1": {
+      "file": "gratings/grating_B1.png",
+      "row": "B",
+      "score": "1",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 16,
+      "michelson_contrast": 0.0625,
+      "log_cs": 1.204,
+      "cycles_in_master": 8
+    },
+    "2": {
+      "file": "gratings/grating_B2.png",
+      "row": "B",
+      "score": "2",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 24,
+      "michelson_contrast": 0.041667,
+      "log_cs": 1.38,
+      "cycles_in_master": 8
+    },
+    "3": {
+      "file": "gratings/grating_B3.png",
+      "row": "B",
+      "score": "3",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 36,
+      "michelson_contrast": 0.027778,
+      "log_cs": 1.556,
+      "cycles_in_master": 8
+    },
+    "4": {
+      "file": "gratings/grating_B4.png",
+      "row": "B",
+      "score": "4",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 50,
+      "michelson_contrast": 0.02,
+      "log_cs": 1.699,
+      "cycles_in_master": 8
+    },
+    "5": {
+      "file": "gratings/grating_B5.png",
+      "row": "B",
+      "score": "5",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 70,
+      "michelson_contrast": 0.014286,
+      "log_cs": 1.845,
+      "cycles_in_master": 8
+    },
+    "6": {
+      "file": "gratings/grating_B6.png",
+      "row": "B",
+      "score": "6",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 99,
+      "michelson_contrast": 0.010101,
+      "log_cs": 1.996,
+      "cycles_in_master": 8
+    },
+    "7": {
+      "file": "gratings/grating_B7.png",
+      "row": "B",
+      "score": "7",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 138,
+      "michelson_contrast": 0.007246,
+      "log_cs": 2.14,
+      "cycles_in_master": 8
+    },
+    "8": {
+      "file": "gratings/grating_B8.png",
+      "row": "B",
+      "score": "8",
+      "spatial_freq_cpd": 6,
+      "linear_cs": 193,
+      "michelson_contrast": 0.005181,
+      "log_cs": 2.286,
+      "cycles_in_master": 8
+    }
+  },
+  "C": {
+    "S": {
+      "file": "gratings/grating_CS.png",
+      "row": "C",
+      "score": "S",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 4,
+      "michelson_contrast": 0.25,
+      "log_cs": 0.602,
+      "cycles_in_master": 12
+    },
+    "1": {
+      "file": "gratings/grating_C1.png",
+      "row": "C",
+      "score": "1",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 8,
+      "michelson_contrast": 0.125,
+      "log_cs": 0.903,
+      "cycles_in_master": 12
+    },
+    "2": {
+      "file": "gratings/grating_C2.png",
+      "row": "C",
+      "score": "2",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 12,
+      "michelson_contrast": 0.083333,
+      "log_cs": 1.079,
+      "cycles_in_master": 12
+    },
+    "3": {
+      "file": "gratings/grating_C3.png",
+      "row": "C",
+      "score": "3",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 18,
+      "michelson_contrast": 0.055556,
+      "log_cs": 1.255,
+      "cycles_in_master": 12
+    },
+    "4": {
+      "file": "gratings/grating_C4.png",
+      "row": "C",
+      "score": "4",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 25,
+      "michelson_contrast": 0.04,
+      "log_cs": 1.398,
+      "cycles_in_master": 12
+    },
+    "5": {
+      "file": "gratings/grating_C5.png",
+      "row": "C",
+      "score": "5",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 35,
+      "michelson_contrast": 0.028571,
+      "log_cs": 1.544,
+      "cycles_in_master": 12
+    },
+    "6": {
+      "file": "gratings/grating_C6.png",
+      "row": "C",
+      "score": "6",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 50,
+      "michelson_contrast": 0.02,
+      "log_cs": 1.699,
+      "cycles_in_master": 12
+    },
+    "7": {
+      "file": "gratings/grating_C7.png",
+      "row": "C",
+      "score": "7",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 70,
+      "michelson_contrast": 0.014286,
+      "log_cs": 1.845,
+      "cycles_in_master": 12
+    },
+    "8": {
+      "file": "gratings/grating_C8.png",
+      "row": "C",
+      "score": "8",
+      "spatial_freq_cpd": 12,
+      "linear_cs": 99,
+      "michelson_contrast": 0.010101,
+      "log_cs": 1.996,
+      "cycles_in_master": 12
+    }
+  },
+  "D": {
+    "S": {
+      "file": "gratings/grating_DS.png",
+      "row": "D",
+      "score": "S",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 1.5,
+      "michelson_contrast": 0.666667,
+      "log_cs": 0.176,
+      "cycles_in_master": 16
+    },
+    "1": {
+      "file": "gratings/grating_D1.png",
+      "row": "D",
+      "score": "1",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 3,
+      "michelson_contrast": 0.333333,
+      "log_cs": 0.477,
+      "cycles_in_master": 16
+    },
+    "2": {
+      "file": "gratings/grating_D2.png",
+      "row": "D",
+      "score": "2",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 4.5,
+      "michelson_contrast": 0.222222,
+      "log_cs": 0.653,
+      "cycles_in_master": 16
+    },
+    "3": {
+      "file": "gratings/grating_D3.png",
+      "row": "D",
+      "score": "3",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 7,
+      "michelson_contrast": 0.142857,
+      "log_cs": 0.845,
+      "cycles_in_master": 16
+    },
+    "4": {
+      "file": "gratings/grating_D4.png",
+      "row": "D",
+      "score": "4",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 9.5,
+      "michelson_contrast": 0.105263,
+      "log_cs": 0.978,
+      "cycles_in_master": 16
+    },
+    "5": {
+      "file": "gratings/grating_D5.png",
+      "row": "D",
+      "score": "5",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 13,
+      "michelson_contrast": 0.076923,
+      "log_cs": 1.114,
+      "cycles_in_master": 16
+    },
+    "6": {
+      "file": "gratings/grating_D6.png",
+      "row": "D",
+      "score": "6",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 18,
+      "michelson_contrast": 0.055556,
+      "log_cs": 1.255,
+      "cycles_in_master": 16
+    },
+    "7": {
+      "file": "gratings/grating_D7.png",
+      "row": "D",
+      "score": "7",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 25,
+      "michelson_contrast": 0.04,
+      "log_cs": 1.398,
+      "cycles_in_master": 16
+    },
+    "8": {
+      "file": "gratings/grating_D8.png",
+      "row": "D",
+      "score": "8",
+      "spatial_freq_cpd": 18,
+      "linear_cs": 36,
+      "michelson_contrast": 0.027778,
+      "log_cs": 1.556,
+      "cycles_in_master": 16
+    }
+  }
+}

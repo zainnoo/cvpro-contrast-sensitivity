@@ -19,6 +19,11 @@ from cs_logic import (
     ROW_LABELS, ROW_NAMES, SPATIAL_FREQS, get_norm_band, age_group
 )
 from pdf_report import generate_pdf
+from screen_calibration import (
+    validate_setup, COMMON_SCREENS, recommended_distance,
+    circle_diameter_pixels
+)
+from test_display import render_calibration_ui, render_test_ui
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -168,6 +173,9 @@ with st.sidebar:
         st.info("No patients yet. Add one above.")
 
     st.divider()
+    # Screen calibration in sidebar
+    render_calibration_ui()
+    st.divider()
     st.caption("Protocol: VectorVision CSV-1000 · 85 cd/m² · 4 spatial frequencies")
 
 
@@ -221,11 +229,48 @@ with col_actions:
 st.divider()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_record, tab_chart, tab_history = st.tabs(["📝 Record Test", "📈 CS Graph", "📋 Test History"])
+tab_live, tab_record, tab_chart, tab_history = st.tabs(["🔬 Live Test", "📝 Manual Entry", "📈 CS Graph", "📋 Test History"])
 
 
 # ════════════════════════════════════════════════════════
-# TAB 1 — Record Test
+# TAB 0 — Live Grating Test
+# ════════════════════════════════════════════════════════
+with tab_live:
+    st.markdown('<p class="section-header">Live Sinusoidal Grating Test</p>',
+                unsafe_allow_html=True)
+
+    # Check screen calibration
+    val = st.session_state.get("screen_valid", {})
+    if not val:
+        st.info("Configure your screen setup in the sidebar first, then start the test.")
+    else:
+        screen_ok = val.get("overall_ok", False)
+        if not screen_ok:
+            st.warning(
+                "⚠️ Your current screen/distance setup may not accurately render "
+                "high spatial frequencies. Adjust the distance in the sidebar."
+            )
+
+        # Luminance guidance
+        with st.expander("📋 Pre-test checklist", expanded=False):
+            st.markdown("""
+            Before testing, ensure:
+            - **Room lighting**: ~85 cd/m² (standard office fluorescent lighting)
+            - **Screen brightness**: Set to 70–80% for most LCD monitors
+            - **Patient correction**: Best corrected vision in the eye being tested
+            - **Testing distance**: Patient seated at the configured distance
+            - **One eye at a time**: Occlude the other eye
+            - **Adaptation**: Allow 30 seconds in room lighting before testing
+            """)
+
+        render_test_ui(
+            patient_name=patient.get("name", "Patient"),
+            patient_age=patient.get("age", 40)
+        )
+
+
+# ════════════════════════════════════════════════════════
+# TAB 1 — Manual Score Entry
 # ════════════════════════════════════════════════════════
 with tab_record:
     st.markdown('<p class="section-header">Record New CS Test</p>', unsafe_allow_html=True)
