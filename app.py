@@ -129,7 +129,7 @@ def get_norm_band(grp):
 # ══════════════════════════════════════════════════════════════════════════════
 # SCREEN CALIBRATION
 # ══════════════════════════════════════════════════════════════════════════════
-# Near-vision laptop/tablet presets only (50 cm testing distance)
+# Screen presets for laptop/tablet — testing distance 50 cm to 200 cm
 COMMON_SCREENS = {
     "Samsung Galaxy Book4 Pro 360 (16\")": 212,
     "MacBook Pro 14\" (M-series)": 254,
@@ -491,7 +491,7 @@ with st.sidebar:
 if not st.session_state.active_patient:
     st.markdown("## Welcome to CV PRO")
     st.markdown("""
-**CV PRO** is a near-vision contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at **50 cm testing distance**.
+**CV PRO** is a contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at testing distances of **50 cm to 200 cm**.
 
 **Getting started:**
 1. **Select your laptop model** in the sidebar — sets the correct DPI automatically
@@ -555,11 +555,11 @@ with tab_live:
         st.markdown("""
 | Item | Requirement |
 |---|---|
-| Testing distance | **50 cm** from laptop screen (near vision protocol) |
+| Testing distance | **50 cm – 200 cm** from laptop screen (adjustable in sidebar) |
 | Screen brightness | **50%** — do NOT exceed; higher brightness causes false positives |
 | Room lighting | Normal ambient indoor light (no direct glare on screen) |
 | Screen angle | Tilt screen so patient sees it straight-on, no reflections |
-| Patient correction | Best corrected near vision — reading glasses / contacts on |
+| Patient correction | Best corrected vision — use appropriate correction for the selected distance |
 | Eye being tested | Occlude other eye with palm or occluder |
 | Adaptation | 30 seconds in room light before starting |
 | Screen preset | Select your exact laptop model in the sidebar |
@@ -592,7 +592,7 @@ Contrast sensitivity is measured in **cycles per degree (cpd)** of visual angle.
 
 > **Pixels per degree = 1 ÷ arctan(pixel size ÷ viewing distance)**
 
-At 50 cm on the Samsung Galaxy Book4 Pro:
+At the default 50 cm on the Samsung Galaxy Book4 Pro (example calculation):
 
 > 1 ÷ arctan(0.01198 ÷ 50) = **72.8 pixels per degree**
 
@@ -606,7 +606,7 @@ For each spatial frequency, we calculate how many pixels are needed to display e
 
 > **Grating diameter (px) = (pixels per degree ÷ frequency in cpd) × number of cycles**
 
-For Row A (3 cpd) at 50 cm on the Galaxy Book4 Pro:
+For Row A (3 cpd) at 50 cm on the Galaxy Book4 Pro (example):
 
 > (72.8 ÷ 3) × 5 = **121 pixels**
 
@@ -652,10 +652,10 @@ The Michelson contrast at each of the 36 test positions is taken directly from V
 | Contrast values | VectorVision norms ✅ | Identical ✅ |
 | Spatial frequency accuracy | Hardware calibrated | Computed from DPI + distance ✅ |
 | Luminance | Fixed 85 cd/m² (backlit) | ~80–100 cd/m² at 50% brightness ⚠ |
-| Testing distance | 200 cm (far vision) | 50 cm (near vision) ⚠ |
+| Testing distance | 200 cm (far vision) | 50 – 200 cm (adjustable) ✅ |
 | Scoring & norms | Same | Identical ✅ |
 
-The two meaningful differences are **luminance** and **testing distance**. Luminance is controlled by standardising screen brightness at 50%. Testing at near distance is a deliberate design choice — it makes the instrument portable and practical — but results should be labelled as **near vision contrast sensitivity** and not directly equated to distance CSV-1000 scores without acknowledgment of this difference.
+The most meaningful difference is **luminance**. Luminance is controlled by standardising screen brightness at 50%. CV PRO supports testing distances from **50 cm to 200 cm** — adjust in the sidebar to match your clinical setup. Results at near distances (50–80 cm) reflect near vision contrast sensitivity and should not be directly equated to far-distance CSV-1000 scores without acknowledging this difference. At 200 cm, results are directly comparable to the standard CSV-1000 protocol.
         """)
 
     st.divider()
@@ -1022,3 +1022,4 @@ st.markdown(
 # v2.6.0 — fix: circle size now responds to distance/DPI changes; range restored to 30-200 cm
 # v2.7.0 — feat: inter-stimulus interval (ISI) 450ms grey discs between stimuli
 # v2.8.0 — feat: Scientific basis expander in Live Test tab; footer reference
+# v2.9.0 — fix: distance text updated throughout (50 cm → 50–200 cm range)
