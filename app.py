@@ -17,7 +17,98 @@ import random
 import io
 import base64
 import time
+import hashlib
+import secrets
+import string
+import urllib.request
 from PIL import Image
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SUPABASE CONFIG
+# ══════════════════════════════════════════════════════════════════════════════
+# Credentials loaded from Streamlit Secrets (never hardcoded in public repo)
+SUPABASE_URL   = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY   = st.secrets["SUPABASE_KEY"]
+ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
+
+def _sb_request(method, path, body=None):
+    """Minimal Supabase REST helper (no extra deps)."""
+    import json as _json
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    data = _json.dumps(body).encode() if body else None
+    req  = urllib.request.Request(url, data=data, method=method)
+    req.add_header("apikey",        SUPABASE_KEY)
+    req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+    req.add_header("Content-Type",  "application/json")
+    req.add_header("Prefer",        "return=representation")
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            txt = r.read().decode()
+            return _json.loads(txt) if txt.strip() else []
+    except Exception as e:
+        return {"error": str(e)}
+
+def generate_licence_key():
+    """Generate a key like CSPRO-XXXX-XXXX-XXXX."""
+    chars = string.ascii_uppercase + string.digits
+    parts = ["".join(secrets.choice(chars) for _ in range(4)) for _ in range(3)]
+    return "CSPRO-" + "-".join(parts)
+
+def fetch_licence(key):
+    """Fetch a licence record by key."""
+    result = _sb_request("GET", f"cspro_licences?licence_key=eq.{key}&select=*")
+    if isinstance(result, list) and result:
+        return result[0]
+    return None
+
+def activate_licence(key, fingerprint):
+    """Lock licence to device fingerprint on first use."""
+    now = datetime.datetime.utcnow().isoformat()
+    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{key}",
+                {"device_fingerprint": fingerprint, "activated_at": now})
+
+def check_licence(key, fingerprint):
+    """
+    Returns (ok: bool, message: str)
+    ok=True  → access granted
+    ok=False → show message and block
+    """
+    if not key:
+        return False, "Enter your licence key to access CS Pro."
+    rec = fetch_licence(key)
+    if rec is None:
+        return False, "❌ Invalid licence key. Please check and try again."
+    if not rec.get("is_active", False):
+        return False, "❌ This licence has been revoked. Contact Dr Zain Khatib."
+    stored_fp = rec.get("device_fingerprint")
+    if not stored_fp:
+        # First activation — lock to this device
+        activate_licence(key, fingerprint)
+        return True, "✅ Licence activated on this device."
+    if stored_fp != fingerprint:
+        return False, (
+            "❌ This licence key is already activated on another device. "
+            "Licence keys cannot be shared. Contact Dr Zain Khatib for a new key."
+        )
+    return True, "✅ Licence valid."
+
+def admin_create_licence(doctor_name, doctor_email, notes):
+    key = generate_licence_key()
+    result = _sb_request("POST", "cspro_licences",
+                         {"licence_key": key, "doctor_name": doctor_name,
+                          "doctor_email": doctor_email, "notes": notes})
+    if isinstance(result, list) and result:
+        return key, None
+    return None, str(result.get("error","Unknown error"))
+
+def admin_revoke_licence(key):
+    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{key}", {"is_active": False})
+
+def admin_reactivate_licence(key):
+    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{key}", {"is_active": True})
+
+def admin_list_licences():
+    return _sb_request("GET", "cspro_licences?select=*&order=created_at.desc")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -410,6 +501,178 @@ def init_state():
             st.session_state[k] = v
 
 init_state()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LICENCE GATE
+# ══════════════════════════════════════════════════════════════════════════════
+# Inject JS to capture a stable browser fingerprint and store in sessionStorage.
+# On page load the JS writes fp to a hidden input; Streamlit reads it via query_params.
+st.markdown("""
+<script>
+(function(){
+  function getFingerprint(){
+    var nav = window.navigator;
+    var scr = window.screen;
+    var raw = [
+      nav.userAgent, nav.language,
+      scr.colorDepth, scr.width, scr.height,
+      new Date().getTimezoneOffset(),
+      nav.hardwareConcurrency||"",
+      nav.platform||""
+    ].join("|");
+    // simple djb2 hash
+    var h = 5381;
+    for(var i=0;i<raw.length;i++){ h=((h<<5)+h)+raw.charCodeAt(i); h=h&h; }
+    return "fp" + Math.abs(h).toString(16);
+  }
+  var fp = sessionStorage.getItem("cspro_fp") || getFingerprint();
+  sessionStorage.setItem("cspro_fp", fp);
+  // push fp into URL param so Streamlit can read it
+  var url = new URL(window.location.href);
+  if(url.searchParams.get("fp") !== fp){
+    url.searchParams.set("fp", fp);
+    window.history.replaceState({}, "", url.toString());
+    window.location.reload();
+  }
+})();
+</script>
+""", unsafe_allow_html=True)
+
+# Read fingerprint from URL params (injected by JS above)
+_params      = st.query_params
+_fingerprint = _params.get("fp", "unknown")
+
+# Check if admin mode requested
+_admin_mode  = _params.get("admin", "") == "1"
+
+# Read saved licence key from session state
+if "licence_key" not in st.session_state:
+    st.session_state["licence_key"]       = ""
+if "licence_ok" not in st.session_state:
+    st.session_state["licence_ok"]        = False
+if "licence_msg" not in st.session_state:
+    st.session_state["licence_msg"]       = ""
+if "admin_authed" not in st.session_state:
+    st.session_state["admin_authed"]      = False
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ADMIN PAGE (access via ?admin=1)
+# ──────────────────────────────────────────────────────────────────────────────
+if _admin_mode:
+    st.markdown("## 🔐 CS Pro Admin — Licence Manager")
+    if not st.session_state["admin_authed"]:
+        pwd = st.text_input("Admin password", type="password", key="admin_pwd_input")
+        if st.button("Login", type="primary"):
+            if pwd == ADMIN_PASSWORD:
+                st.session_state["admin_authed"] = True
+                st.rerun()
+            else:
+                st.error("❌ Wrong password.")
+        st.stop()
+
+    # ── Generate new licence
+    st.markdown("### ➕ Generate New Licence")
+    with st.form("gen_form"):
+        col1, col2 = st.columns(2)
+        d_name  = col1.text_input("Doctor name", placeholder="Dr Ravi Sharma")
+        d_email = col2.text_input("Email (optional)", placeholder="doctor@clinic.com")
+        d_notes = st.text_input("Notes (optional)", placeholder="Purchased batch 1")
+        submitted = st.form_submit_button("🎫 Generate Key", type="primary", use_container_width=True)
+    if submitted:
+        if not d_name.strip():
+            st.error("Doctor name is required.")
+        else:
+            new_key, err = admin_create_licence(d_name.strip(), d_email.strip(), d_notes.strip())
+            if new_key:
+                st.success(f"✅ Licence created!")
+                st.code(new_key, language=None)
+                st.info(f"Send this key to **{d_name}**. It activates on first use and locks to their device.")
+            else:
+                st.error(f"❌ Error: {err}")
+
+    st.divider()
+
+    # ── All licences table
+    st.markdown("### 📊 All Licences")
+    if st.button("🔄 Refresh", key="admin_refresh"):
+        st.rerun()
+    licences = admin_list_licences()
+    if isinstance(licences, list) and licences:
+        for lic in licences:
+            status_icon = "🟢" if lic.get("is_active") else "🔴"
+            activated   = "✅ Activated" if lic.get("activated_at") else "⏳ Not yet used"
+            with st.expander(f"{status_icon} {lic['doctor_name']} — {lic['licence_key']}"):
+                st.markdown(f"**Email:** {lic.get('doctor_email') or '—'}")
+                st.markdown(f"**Status:** {'Active' if lic.get('is_active') else '🔴 Revoked'}")
+                st.markdown(f"**Device:** {activated}")
+                st.markdown(f"**Fingerprint:** `{lic.get('device_fingerprint') or 'none'}`")
+                st.markdown(f"**Created:** {lic['created_at'][:10]}")
+                st.markdown(f"**Notes:** {lic.get('notes') or '—'}")
+                c1, c2, c3 = st.columns(3)
+                if lic.get("is_active"):
+                    if c1.button("🔴 Revoke", key=f"rev_{lic['id']}"):
+                        admin_revoke_licence(lic["licence_key"])
+                        st.success("Revoked.")
+                        st.rerun()
+                else:
+                    if c1.button("🟢 Reactivate", key=f"react_{lic['id']}"):
+                        admin_reactivate_licence(lic["licence_key"])
+                        st.success("Reactivated.")
+                        st.rerun()
+                if c2.button("🖱️ Reset device lock", key=f"reset_{lic['id']}",
+                             help="Clears fingerprint so key can be used on a new device"):
+                    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{lic['licence_key']}",
+                                {"device_fingerprint": None, "activated_at": None})
+                    st.success("🔄 Device lock reset. Key can be activated on a new device.")
+                    st.rerun()
+    else:
+        st.info("No licences yet. Generate one above.")
+    st.stop()   # Do not show main app in admin mode
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LICENCE GATE SCREEN (shown before app if not validated)
+# ──────────────────────────────────────────────────────────────────────────────
+if not st.session_state["licence_ok"]:
+    # Centre the gate card
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown("""
+        <div style="text-align:center; padding: 40px 0 20px;">
+          <span style="font-size:56px;">👁️</span>
+          <h1 style="margin:12px 0 4px; font-size:28px; font-weight:700;">CS Pro</h1>
+          <p style="color:#64748b; font-size:15px; margin:0;">Contrast Sensitivity Analyser</p>
+          <p style="color:#64748b; font-size:13px; margin-top:4px;">VectorVision CSV-1000 Protocol</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### Enter your licence key")
+        key_input = st.text_input(
+            "Licence key", placeholder="CSPRO-XXXX-XXXX-XXXX",
+            key="licence_key_input",
+            label_visibility="collapsed"
+        ).strip().upper()
+
+        if st.button("🔓 Unlock CS Pro", type="primary", use_container_width=True):
+            if _fingerprint == "unknown":
+                st.warning("⚠️ Device fingerprint not ready yet. Please wait a moment and try again.")
+            else:
+                ok, msg = check_licence(key_input, _fingerprint)
+                st.session_state["licence_ok"]  = ok
+                st.session_state["licence_key"] = key_input
+                st.session_state["licence_msg"] = msg
+                st.rerun()
+
+        if st.session_state["licence_msg"]:
+            if st.session_state["licence_ok"]:
+                st.success(st.session_state["licence_msg"])
+            else:
+                st.error(st.session_state["licence_msg"])
+
+        st.markdown("""<div style="text-align:center; margin-top:24px; color:#94a3b8; font-size:12px;">
+        Licences are single-device only and cannot be shared.<br>
+        Contact <b>Dr Zain Khatib</b> to obtain a licence key.
+        </div>""", unsafe_allow_html=True)
+    st.stop()   # Block the rest of the app
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -1024,3 +1287,4 @@ st.markdown(
 # v2.8.0 — feat: Scientific basis expander in Live Test tab; footer reference
 # v2.9.0 — fix: distance text updated throughout (50 cm → 50–200 cm range)
 # v3.0.0 — fix: MIN_DISPLAY_PX 80→50 (rows C/D no longer clamped at 50cm); anti-run max 2→3; renamed CS Pro
+# v3.1.0 — feat: per-device licence system (Supabase-backed, device fingerprint lock, admin panel)
