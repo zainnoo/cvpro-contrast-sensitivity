@@ -1,1290 +1,369 @@
-"""
-CS Pro — Contrast Sensitivity Analyser
-Streamlit app · VectorVision CSV-1000 protocol
-All modules consolidated into one file for reliability.
-"""
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import datetime
-import json
-import os
-import random
-import io
-import base64
-import time
-import hashlib
-import secrets
-import string
-import urllib.request
+# CS Pro — Contrast Sensitivity Analyser
+# Copyright (c) 2026 Dr Zain Khatib. All rights reserved.
+# Unauthorised copying, modification, or redistribution of this software
+# is strictly prohibited. This file is proprietary and confidential.
+# Protected under applicable intellectual property laws.
+import base64 as _b64
+_d=lambda s:_b64.b64decode(s).decode()
+_AD='collapsed'
+_AC='isi_active'
+_AB='Log Contrast Sensitivity'
+_AA='gratings_output'
+_A9='Custom (enter DPI)'
+_A8='doctor_email'
+_A7='doctor_name'
+_A6='score_d'
+_A5='score_c'
+_A4='score_b'
+_A3='score_a'
+_A2='gender'
+_A1='screen_valid'
+_A0='distance_cm'
+_z='screen_dpi'
+_y='white'
+_x='#f97316'
+_w='#94a3b8'
+_v='#0ea5e9'
+_u='overall_ok'
+_t='ppd'
+_s='Severely reduced'
+_r='Moderately reduced'
+_q='Mildly reduced'
+_p='Normal'
+_o='56-75'
+_n='20-55'
+_m='activated_at'
+_l='Visit'
+_k='log_d'
+_j='log_c'
+_i='log_b'
+_h='log_a'
+_g='mrn'
+_f='age'
+_e='admin_authed'
+_d='#e2e8f0'
+_c='ok'
+_b='lower'
+_a='upper'
+_Z='sd'
+_Y='device_fingerprint'
+_X='PATCH'
+_W='licence_ok'
+_V='--'
+_U='#22c55e'
+_T='rows'
+_S='primary'
+_R='licence_msg'
+_Q='notes'
+_P='is_active'
+_O='name'
+_N='aulcsf'
+_M='licence_key'
+_L='visit_date'
+_K='visit_label'
+_J='—'
+_I='mean'
+_H='D'
+_G='C'
+_F='eye'
+_E='B'
+_D='A'
+_C=None
+_B=False
+_A=True
+import streamlit as st,pandas as pd,numpy as np,matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt,datetime,json,os,random,io,base64,time,hashlib,secrets,string,urllib.request
 from PIL import Image
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SUPABASE CONFIG
-# ══════════════════════════════════════════════════════════════════════════════
-# Credentials loaded from Streamlit Secrets (never hardcoded in public repo)
-SUPABASE_URL   = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY   = st.secrets["SUPABASE_KEY"]
-ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
-
-def _sb_request(method, path, body=None):
-    """Minimal Supabase REST helper (no extra deps)."""
-    import json as _json
-    url = f"{SUPABASE_URL}/rest/v1/{path}"
-    data = _json.dumps(body).encode() if body else None
-    req  = urllib.request.Request(url, data=data, method=method)
-    req.add_header("apikey",        SUPABASE_KEY)
-    req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
-    req.add_header("Content-Type",  "application/json")
-    req.add_header("Prefer",        "return=representation")
-    try:
-        with urllib.request.urlopen(req, timeout=6) as r:
-            txt = r.read().decode()
-            return _json.loads(txt) if txt.strip() else []
-    except Exception as e:
-        return {"error": str(e)}
-
-def generate_licence_key():
-    """Generate a key like CSPRO-XXXX-XXXX-XXXX."""
-    chars = string.ascii_uppercase + string.digits
-    parts = ["".join(secrets.choice(chars) for _ in range(4)) for _ in range(3)]
-    return "CSPRO-" + "-".join(parts)
-
+SUPABASE_URL=st.secrets['SUPABASE_URL']
+SUPABASE_KEY=st.secrets['SUPABASE_KEY']
+ADMIN_PASSWORD=st.secrets['ADMIN_PASSWORD']
+def _sb_request(method,path,body=_C):
+	import json as B;D=f"{SUPABASE_URL}/rest/v1/{path}";E=B.dumps(body).encode()if body else _C;A=urllib.request.Request(D,data=E,method=method);A.add_header('apikey',SUPABASE_KEY);A.add_header('Authorization',f"Bearer {SUPABASE_KEY}");A.add_header('Content-Type','application/json');A.add_header('Prefer','return=representation')
+	try:
+		with urllib.request.urlopen(A,timeout=6)as F:C=F.read().decode();return B.loads(C)if C.strip()else[]
+	except Exception as G:return{'error':str(G)}
+def generate_licence_key():A=string.ascii_uppercase+string.digits;B=[''.join(secrets.choice(A)for B in range(4))for B in range(3)];return'CSPRO-'+'-'.join(B)
 def fetch_licence(key):
-    """Fetch a licence record by key."""
-    result = _sb_request("GET", f"cspro_licences?licence_key=eq.{key}&select=*")
-    if isinstance(result, list) and result:
-        return result[0]
-    return None
-
-def activate_licence(key, fingerprint):
-    """Lock licence to device fingerprint on first use."""
-    now = datetime.datetime.utcnow().isoformat()
-    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{key}",
-                {"device_fingerprint": fingerprint, "activated_at": now})
-
-def check_licence(key, fingerprint):
-    """
-    Returns (ok: bool, message: str)
-    ok=True  → access granted
-    ok=False → show message and block
-    """
-    if not key:
-        return False, "Enter your licence key to access CS Pro."
-    rec = fetch_licence(key)
-    if rec is None:
-        return False, "❌ Invalid licence key. Please check and try again."
-    if not rec.get("is_active", False):
-        return False, "❌ This licence has been revoked. Contact Dr Zain Khatib."
-    stored_fp = rec.get("device_fingerprint")
-    if not stored_fp:
-        # First activation — lock to this device
-        activate_licence(key, fingerprint)
-        return True, "✅ Licence activated on this device."
-    if stored_fp != fingerprint:
-        return False, (
-            "❌ This licence key is already activated on another device. "
-            "Licence keys cannot be shared. Contact Dr Zain Khatib for a new key."
-        )
-    return True, "✅ Licence valid."
-
-def admin_create_licence(doctor_name, doctor_email, notes):
-    key = generate_licence_key()
-    result = _sb_request("POST", "cspro_licences",
-                         {"licence_key": key, "doctor_name": doctor_name,
-                          "doctor_email": doctor_email, "notes": notes})
-    if isinstance(result, list) and result:
-        return key, None
-    return None, str(result.get("error","Unknown error"))
-
-def admin_revoke_licence(key):
-    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{key}", {"is_active": False})
-
-def admin_reactivate_licence(key):
-    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{key}", {"is_active": True})
-
-def admin_list_licences():
-    return _sb_request("GET", "cspro_licences?select=*&order=created_at.desc")
-
-# ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="CS Pro — Contrast Sensitivity Analyser",
-    page_icon="👁️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# ── CSS ───────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-div[data-testid="metric-container"] {
-    background: white; border: 1px solid #e2e8f0;
-    border-radius: 10px; padding: 14px 18px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
-[data-testid="stSidebar"] { background: #1e293b !important; }
-[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-[data-testid="stSidebar"] input,
-[data-testid="stSidebar"] textarea,
-[data-testid="stSidebar"] select,
-[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] *,
-[data-testid="stSidebar"] .stTextInput input,
-[data-testid="stSidebar"] .stNumberInput input {
-    color: #1e293b !important;
-    background-color: #f8fafc !important;
-    border-color: #cbd5e1 !important;
-}
-[data-testid="stSidebar"] ::placeholder {
-    color: #64748b !important;
-    opacity: 1 !important;
-}
-.stDownloadButton > button {
-    background-color: #0ea5e9 !important; color: white !important;
-    border: none !important; border-radius: 8px !important;
-    font-weight: 500 !important; width: 100%;
-}
-.section-hdr {
-    font-size: 15px; font-weight: 600; color: #1e293b;
-    margin-bottom: 12px; padding-bottom: 6px;
-    border-bottom: 2px solid #0ea5e9;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CS LOGIC
-# ══════════════════════════════════════════════════════════════════════════════
-LOG_CS = {
-    "A": {1:1.00,2:1.17,3:1.34,4:1.49,5:1.63,6:1.78,7:1.93,8:2.08},
-    "B": {1:1.21,2:1.38,3:1.55,4:1.70,5:1.84,6:1.99,7:2.14,8:2.29},
-    "C": {1:0.91,2:1.08,3:1.25,4:1.40,5:1.54,6:1.69,7:1.84,8:1.99},
-    "D": {1:0.47,2:0.64,3:0.81,4:0.96,5:1.10,6:1.25,7:1.40,8:1.55},
-}
-# Official linear CS values → Michelson contrast = 1/CS
-LINEAR_CS = {
-    "A": [5,  10,  15,  22,  31,  43,  61,  85,  120],  # S,1..8
-    "B": [8,  16,  24,  36,  50,  70,  99,  138, 193],
-    "C": [4,  8,   12,  18,  25,  35,  50,  70,  99 ],
-    "D": [1.5,3,   4.5, 7,   9.5, 13,  18,  25,  36 ],
-}
-SPATIAL_FREQS = [3, 6, 12, 18]
-LOG_SPATIAL_FREQS = [np.log10(f) for f in SPATIAL_FREQS]
-ROW_LABELS = ["A","B","C","D"]
-ROW_NAMES  = {"A":"3 cpd","B":"6 cpd","C":"12 cpd","D":"18 cpd"}
-SCORES_ALL = ["S","1","2","3","4","5","6","7","8"]
-CYCLES_IN_MASTER = {"A":5,"B":8,"C":12,"D":16}
-FREQS = {"A":3,"B":6,"C":12,"D":18}
-MASTER_DPI = 1200  # px diameter of master grating images
-
-AGE_NORMS = {
-    "20-55": {"mean":[1.84,2.09,1.76,1.33],"sd":[0.14,0.16,0.17,0.19]},
-    "56-75": {"mean":[1.56,1.80,1.50,0.93],"sd":[0.15,0.165,0.15,0.25]},
-}
-
-def score_to_log(row, score):
-    if not score: return None
-    return LOG_CS[row].get(int(score))
-
+	A=_sb_request('GET',f"cspro_licences?licence_key=eq.{key}&select=*")
+	if isinstance(A,list)and A:return A[0]
+def activate_licence(key,fingerprint):A=datetime.datetime.utcnow().isoformat();_sb_request(_X,f"cspro_licences?licence_key=eq.{key}",{_Y:fingerprint,_m:A})
+def check_licence(key,fingerprint):
+	C=fingerprint;A=key
+	if not A:return _B,'Enter your licence key to access CS Pro.'
+	B=fetch_licence(A)
+	if B is _C:return _B,'❌ Invalid licence key. Please check and try again.'
+	if not B.get(_P,_B):return _B,'❌ This licence has been revoked. Contact Dr Zain Khatib.'
+	D=B.get(_Y)
+	if not D:activate_licence(A,C);return _A,'✅ Licence activated on this device.'
+	if D!=C:return _B,'❌ This licence key is already activated on another device. Licence keys cannot be shared. Contact Dr Zain Khatib for a new key.'
+	return _A,'✅ Licence valid.'
+def admin_create_licence(doctor_name,doctor_email,notes):
+	B=generate_licence_key();A=_sb_request('POST','cspro_licences',{_M:B,_A7:doctor_name,_A8:doctor_email,_Q:notes})
+	if isinstance(A,list)and A:return B,_C
+	return _C,str(A.get('error','Unknown error'))
+def admin_revoke_licence(key):_sb_request(_X,f"cspro_licences?licence_key=eq.{key}",{_P:_B})
+def admin_reactivate_licence(key):_sb_request(_X,f"cspro_licences?licence_key=eq.{key}",{_P:_A})
+def admin_list_licences():return _sb_request('GET','cspro_licences?select=*&order=created_at.desc')
+st.set_page_config(page_title='CS Pro — Contrast Sensitivity Analyser',page_icon='👁️',layout='wide',initial_sidebar_state='expanded')
+st.markdown('\n<style>\n@import url(\'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap\');\nhtml, body, [class*="css"] { font-family: \'Inter\', sans-serif; }\ndiv[data-testid="metric-container"] {\n    background: white; border: 1px solid #e2e8f0;\n    border-radius: 10px; padding: 14px 18px;\n    box-shadow: 0 1px 3px rgba(0,0,0,0.06);\n}\n[data-testid="stSidebar"] { background: #1e293b !important; }\n[data-testid="stSidebar"] * { color: #e2e8f0 !important; }\n[data-testid="stSidebar"] input,\n[data-testid="stSidebar"] textarea,\n[data-testid="stSidebar"] select,\n[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] *,\n[data-testid="stSidebar"] .stTextInput input,\n[data-testid="stSidebar"] .stNumberInput input {\n    color: #1e293b !important;\n    background-color: #f8fafc !important;\n    border-color: #cbd5e1 !important;\n}\n[data-testid="stSidebar"] ::placeholder {\n    color: #64748b !important;\n    opacity: 1 !important;\n}\n.stDownloadButton > button {\n    background-color: #0ea5e9 !important; color: white !important;\n    border: none !important; border-radius: 8px !important;\n    font-weight: 500 !important; width: 100%;\n}\n.section-hdr {\n    font-size: 15px; font-weight: 600; color: #1e293b;\n    margin-bottom: 12px; padding-bottom: 6px;\n    border-bottom: 2px solid #0ea5e9;\n}\n</style>\n',unsafe_allow_html=_A)
+LOG_CS={_D:{1:1.,2:1.17,3:1.34,4:1.49,5:1.63,6:1.78,7:1.93,8:2.08},_E:{1:1.21,2:1.38,3:1.55,4:1.7,5:1.84,6:1.99,7:2.14,8:2.29},_G:{1:.91,2:1.08,3:1.25,4:1.4,5:1.54,6:1.69,7:1.84,8:1.99},_H:{1:.47,2:.64,3:.81,4:.96,5:1.1,6:1.25,7:1.4,8:1.55}}
+LINEAR_CS={_D:[5,10,15,22,31,43,61,85,120],_E:[8,16,24,36,50,70,99,138,193],_G:[4,8,12,18,25,35,50,70,99],_H:[1.5,3,4.5,7,9.5,13,18,25,36]}
+SPATIAL_FREQS=[3,6,12,18]
+LOG_SPATIAL_FREQS=[np.log10(A)for A in SPATIAL_FREQS]
+ROW_LABELS=[_D,_E,_G,_H]
+ROW_NAMES={_D:'3 cpd',_E:'6 cpd',_G:'12 cpd',_H:'18 cpd'}
+SCORES_ALL=['S','1','2','3','4','5','6','7','8']
+CYCLES_IN_MASTER={_D:5,_E:8,_G:12,_H:16}
+FREQS={_D:3,_E:6,_G:12,_H:18}
+MASTER_DPI=1200
+AGE_NORMS={_n:{_I:[1.84,2.09,1.76,1.33],_Z:[.14,.16,.17,.19]},_o:{_I:[1.56,1.8,1.5,.93],_Z:[.15,.165,.15,.25]}}
+def score_to_log(row,score):
+	A=score
+	if not A:return
+	return LOG_CS[row].get(int(A))
 def calc_aulcsf(log_vals):
-    if all(v is None for v in log_vals): return None
-    v = [x if x is not None else 0.0 for x in log_vals]
-    area = sum(((v[i]+v[i+1])/2)*(LOG_SPATIAL_FREQS[i+1]-LOG_SPATIAL_FREQS[i])
-               for i in range(len(LOG_SPATIAL_FREQS)-1))
-    return round(area, 3)
-
+	A=log_vals
+	if all(A is _C for A in A):return
+	B=[A if A is not _C else .0 for A in A];C=sum((B[A]+B[A+1])/2*(LOG_SPATIAL_FREQS[A+1]-LOG_SPATIAL_FREQS[A])for A in range(len(LOG_SPATIAL_FREQS)-1));return round(C,3)
 def interpret_aulcsf(val):
-    """Thresholds calibrated to VectorVision CSV-1000 age-norm data.
-    Normal mean (20-55 yrs) = 1.443; -1SD = 1.317; -2SD = 1.190
-    Normal mean (56-75 yrs) = 1.216; -1SD = 1.086
-    """
-    if val is None: return "Insufficient data","gray"
-    if val >= 1.32: return "Normal","green"
-    if val >= 1.19: return "Mildly reduced","orange"
-    if val >= 1.09: return "Moderately reduced","red"
-    return "Severely reduced","darkred"
-
-def get_norm_band(grp):
-    n = AGE_NORMS[grp]
-    return {
-        "upper":[m+s for m,s in zip(n["mean"],n["sd"])],
-        "mean": n["mean"],
-        "lower":[max(0,m-s) for m,s in zip(n["mean"],n["sd"])],
-    }
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SCREEN CALIBRATION
-# ══════════════════════════════════════════════════════════════════════════════
-# Screen presets for laptop/tablet — testing distance 50 cm to 200 cm
-COMMON_SCREENS = {
-    "Samsung Galaxy Book4 Pro 360 (16\")": 212,
-    "MacBook Pro 14\" (M-series)": 254,
-    "MacBook Pro 16\" (M-series)": 254,
-    "MacBook Air 13\" (M-series)": 224,
-    "MacBook Air 15\" (M-series)": 224,
-    "Dell XPS 13 (2560×1600)": 227,
-    "Dell XPS 15 (3456×2160)": 261,
-    "HP Spectre x360 14\"": 260,
-    "Lenovo ThinkPad X1 Carbon (14\")": 210,
-    "Surface Laptop 5 (13.5\")": 201,
-    "Surface Pro 9 (13\")": 267,
-    "iPad Pro 12.9\" (M-series)": 264,
-    "iPad Air 11\" (M3)": 264,
-    "Full HD Laptop 15.6\" (1920×1080)": 141,
-    "Full HD Laptop 14\" (1920×1080)": 157,
-    "2K Laptop 14\" (2560×1600)": 214,
-    "Custom (enter DPI)": None,
-}
-
-def ppd(dpi, dist_cm):
-    """Pixels per degree of visual angle."""
-    px_cm = 2.54 / dpi
-    return 1.0 / np.degrees(np.arctan(px_cm / dist_cm))
-
-def circle_diam_px(freq_cpd, dpi, dist_cm, cycles):
-    """Compute display diameter in pixels for exact visual angle."""
-    return max(60, int(round(ppd(dpi, dist_cm) / freq_cpd * cycles)))
-
-def validate_screen(dpi, dist_cm):
-    results = {"ppd": round(ppd(dpi, dist_cm), 1), "rows": {}}
-    for row in ROW_LABELS:
-        freq = FREQS[row]
-        cyc  = CYCLES_IN_MASTER[row]
-        dp   = circle_diam_px(freq, dpi, dist_cm, cyc)
-        ppc  = ppd(dpi, dist_cm) / freq
-        ok   = ppc >= 2.0 and dp >= 60
-        results["rows"][row] = {"freq":freq,"diam_px":dp,"ppc":round(ppc,1),"ok":ok}
-    results["overall_ok"] = all(r["ok"] for r in results["rows"].values())
-    return results
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GRATING GENERATOR (runs on demand, cached)
-# ══════════════════════════════════════════════════════════════════════════════
-GRATING_DIR = os.path.join(os.path.dirname(__file__), "gratings_output", "gratings")
-BLANK_DIR   = os.path.join(os.path.dirname(__file__), "gratings_output", "blanks")
-GRATINGS_AVAILABLE = os.path.isdir(GRATING_DIR)
-
-def linear_to_srgb(L):
-    return (np.power(np.clip(L, 0, 1), 1/2.2) * 255).astype(np.uint8)
-
-def make_grating_image(freq_cpd, michelson, diam_px, cycles):
-    x = np.linspace(0, cycles * 2 * np.pi, diam_px)
-    X = np.tile(x, (diam_px, 1))
-    L = 0.5 * (1 + michelson * np.sin(X))
-    cy = cx = diam_px // 2
-    yy, xx = np.ogrid[:diam_px, :diam_px]
-    L[np.sqrt((xx-cx)**2+(yy-cy)**2) > cx-1] = 0.5
-    px = linear_to_srgb(L)
-    return Image.fromarray(np.stack([px,px,px], axis=-1), mode="RGB")
-
-def make_blank_image(diam_px):
-    v = int(linear_to_srgb(np.array([0.5]))[0])
-    return Image.new("RGB", (diam_px, diam_px), (v, v, v))
-
-@st.cache_data(show_spinner=False)
-def get_grating(row, score_label, diam_px):
-    """Load from pre-generated file if available, else generate on-the-fly."""
-    if GRATINGS_AVAILABLE:
-        path = os.path.join(GRATING_DIR, f"grating_{row}{score_label}.png")
-        if os.path.exists(path):
-            return Image.open(path).resize((diam_px, diam_px), Image.LANCZOS)
-    # Fallback: generate on-the-fly
-    idx = SCORES_ALL.index(score_label)
-    cs_val = LINEAR_CS[row][idx]
-    michelson = 1.0 / cs_val
-    return make_grating_image(FREQS[row], michelson, diam_px, CYCLES_IN_MASTER[row])
-
-@st.cache_data(show_spinner=False)
-def get_blank(row, diam_px):
-    if GRATINGS_AVAILABLE:
-        path = os.path.join(BLANK_DIR, f"blank_{row}.png")
-        if os.path.exists(path):
-            return Image.open(path).resize((diam_px, diam_px), Image.LANCZOS)
-    return make_blank_image(diam_px)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PDF REPORT
-# ══════════════════════════════════════════════════════════════════════════════
-def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.lib.units import cm
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                    Table, TableStyle, HRFlowable,
-                                    Image as RLImage, KeepTogether)
-    from reportlab.lib.enums import TA_CENTER
-
-    BLUE = colors.HexColor("#0ea5e9")
-    DARK = colors.HexColor("#1e293b")
-    LIGHT= colors.HexColor("#f1f5f9")
-    MID  = colors.HexColor("#94a3b8")
-    GREEN= colors.HexColor("#22c55e")
-    YEL  = colors.HexColor("#f59e0b")
-    ORG  = colors.HexColor("#f97316")
-    RED  = colors.HexColor("#ef4444")
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=2*cm, rightMargin=2*cm,
-                            topMargin=2*cm, bottomMargin=2*cm)
-    story = []
-
-    # Header
-    story.append(Paragraph("CS Pro",
-        ParagraphStyle("h",fontSize=20,textColor=BLUE,fontName="Helvetica-Bold")))
-    story.append(Paragraph("Contrast Sensitivity Function Report",
-        ParagraphStyle("s",fontSize=9,textColor=MID,fontName="Helvetica",spaceAfter=4)))
-    story.append(HRFlowable(width="100%",thickness=1,color=BLUE))
-    story.append(Spacer(1,0.4*cm))
-
-    # Patient info
-    pt = [[patient_name, f"Age: {patient_age} yrs · {patient_gender.capitalize()}",
-           f"MRN: {patient_mrn or '—'}",
-           f"Date: {datetime.date.today().strftime('%d %b %Y')}"]]
-    pt_t = Table(pt, colWidths=[5*cm,5*cm,4*cm,4*cm])
-    pt_t.setStyle(TableStyle([
-        ("FONTNAME",(0,0),(-1,-1),"Helvetica"),
-        ("FONTNAME",(0,0),(0,0),"Helvetica-Bold"),
-        ("FONTSIZE",(0,0),(-1,-1),9),
-        ("BACKGROUND",(0,0),(-1,-1),LIGHT),
-        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
-        ("LEFTPADDING",(0,0),(-1,-1),8),
-        ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#e2e8f0")),
-    ]))
-    story.append(pt_t)
-    story.append(Spacer(1,0.5*cm))
-
-    # Chart
-    if tests:
-        fig, ax = plt.subplots(figsize=(8,4.2), dpi=140)
-        xi = np.arange(4)
-        band = get_norm_band("20-55" if patient_age < 56 else "56-75")
-        ax.fill_between(xi, band["lower"], band["upper"],
-                        color="#22c55e", alpha=0.12, label="Normal range (±1 SD)")
-        ax.plot(xi, band["mean"], color="#22c55e", lw=1, ls="--", alpha=0.5)
-        pal = ["#0ea5e9","#f97316","#8b5cf6","#10b981"]
-        ls_map = {"OD":"-","OS":"--"}
-        for i,t in enumerate(tests):
-            lv = [t.get(f"log_{r.lower()}") for r in ROW_LABELS]
-            px2, py = zip(*[(j,v) for j,v in enumerate(lv) if v is not None]) if any(v is not None for v in lv) else ([],[])
-            if py:
-                col_i = pal[i % len(pal)]
-                ax.plot(list(px2), list(py), color=col_i,
-                        ls=ls_map.get(t["eye"],"-"), lw=2.2,
-                        marker="o", ms=7, markerfacecolor="white", markeredgewidth=2,
-                        label=f"{t['eye']} · {t.get('visit_label') or t['visit_date']}")
-        ax.set_xticks(xi); ax.set_xticklabels([f"{f} cpd" for f in SPATIAL_FREQS])
-        ax.set_ylim(0,2.6); ax.set_ylabel("Log Contrast Sensitivity")
-        ax.set_xlabel("Spatial Frequency (cpd)")
-        ax.grid(True,color="#e2e8f0",lw=0.8); ax.spines[["top","right"]].set_visible(False)
-        ax.legend(fontsize=8); plt.tight_layout()
-        chart_buf = io.BytesIO()
-        plt.savefig(chart_buf, format="png", bbox_inches="tight"); plt.close(fig)
-        chart_buf.seek(0)
-        story.append(KeepTogether([
-            Paragraph("Contrast Sensitivity Function Curve",
-                ParagraphStyle("sec",fontSize=11,textColor=DARK,fontName="Helvetica-Bold",spaceAfter=6)),
-            RLImage(chart_buf, width=16*cm, height=9*cm),
-        ]))
-        story.append(Spacer(1,0.5*cm))
-
-    # Per-test tables
-    story.append(Paragraph("Detailed Scores",
-        ParagraphStyle("sec",fontSize=11,textColor=DARK,fontName="Helvetica-Bold",spaceAfter=8)))
-
-    for t in tests:
-        aulcsf_val = t.get("aulcsf")
-        interp,_ = interpret_aulcsf(aulcsf_val)
-        story.append(Paragraph(
-            f"<b>{t['eye']}</b> · {t.get('visit_label') or ''} · {t['visit_date']}",
-            ParagraphStyle("te",fontSize=10,fontName="Helvetica",spaceAfter=4)))
-        hdr = [["Row","Freq","Score","Log CS","Status"]]
-        rows_data = []
-        for row in ROW_LABELS:
-            sc = t.get(f"score_{row.lower()}")
-            lv = t.get(f"log_{row.lower()}")
-            st2 = ("Good" if lv and lv>=1.70 else
-                   "Borderline" if lv and lv>=1.40 else
-                   "Reduced" if lv else "Not seen")
-            rows_data.append([row, ROW_NAMES[row], str(sc) if sc else "0",
-                               f"{lv:.2f}" if lv else "—", st2])
-        tbl = Table(hdr+rows_data, colWidths=[1.5*cm,3*cm,3*cm,3*cm,4.5*cm])
-        tbl.setStyle(TableStyle([
-            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTNAME",(0,1),(-1,-1),"Helvetica"),
-            ("FONTSIZE",(0,0),(-1,-1),9),
-            ("BACKGROUND",(0,0),(-1,0),DARK),("TEXTCOLOR",(0,0),(-1,0),colors.white),
-            ("ROWBACKGROUNDS",(0,1),(-1,-1),[LIGHT,colors.white]),
-            ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#e2e8f0")),
-            ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
-            ("LEFTPADDING",(0,0),(-1,-1),6),("ALIGN",(2,0),(-1,-1),"CENTER"),
-        ]))
-        story.append(tbl)
-        arow = [[f"AULCSF: {aulcsf_val:.3f}" if aulcsf_val else "AULCSF: —",
-                 interp,
-                 f"Notes: {t.get('notes') or '—'}"]]
-        atbl = Table(arow, colWidths=[4*cm,4*cm,10*cm])
-        atbl.setStyle(TableStyle([
-            ("FONTNAME",(0,0),(0,0),"Helvetica-Bold"),("FONTNAME",(1,0),(-1,0),"Helvetica"),
-            ("FONTSIZE",(0,0),(-1,-1),9),("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#f0f9ff")),
-            ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#bae6fd")),
-            ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
-            ("LEFTPADDING",(0,0),(-1,-1),6),
-        ]))
-        story.append(atbl)
-        story.append(Spacer(1,0.4*cm))
-
-    # Footer
-    story.append(HRFlowable(width="100%",thickness=0.5,color=MID))
-    story.append(Spacer(1,0.2*cm))
-    story.append(Paragraph(
-        f"CS Pro · Generated {datetime.datetime.now().strftime('%d %b %Y %H:%M')} · "
-        "Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al.",
-        ParagraphStyle("ft",fontSize=7,textColor=MID,alignment=TA_CENTER)))
-    doc.build(story)
-    buf.seek(0)
-    return buf.getvalue()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CIRCULAR IMAGE RENDERER
-# ══════════════════════════════════════════════════════════════════════════════
-# Maximum on-screen diameter to prevent overflow (caps at 420px per column)
-MAX_DISPLAY_PX = 420
-MIN_DISPLAY_PX = 50   # lowered from 80 — prevents false clamping of rows C/D at near distances
-
-def pil_to_b64(img: Image.Image, size_px: int) -> str:
-    """Resize PIL image to size_px square and return base64-encoded PNG string."""
-    img_resized = img.resize((size_px, size_px), Image.LANCZOS)
-    buf = io.BytesIO()
-    img_resized.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
-
-def show_circle(img: Image.Image, label: str, physics_px: int):
-    """Render a PIL image as a circle at the physics-correct pixel size (capped to screen)."""
-    # Clamp to reasonable screen bounds — preserves proportional size changes
-    display_px = int(np.clip(physics_px, MIN_DISPLAY_PX, MAX_DISPLAY_PX))
-    b64 = pil_to_b64(img, display_px)
-    st.markdown(
-        f"""
+	A=val
+	if A is _C:return'Insufficient data','gray'
+	if A>=1.32:return _p,'green'
+	if A>=1.19:return _q,'orange'
+	if A>=1.09:return _r,'red'
+	return _s,'darkred'
+def get_norm_band(grp):A=AGE_NORMS[grp];return{_a:[A+B for(A,B)in zip(A[_I],A[_Z])],_I:A[_I],_b:[max(0,A-B)for(A,B)in zip(A[_I],A[_Z])]}
+COMMON_SCREENS={'Samsung Galaxy Book4 Pro 360 (16")':212,'MacBook Pro 14" (M-series)':254,'MacBook Pro 16" (M-series)':254,'MacBook Air 13" (M-series)':224,'MacBook Air 15" (M-series)':224,'Dell XPS 13 (2560×1600)':227,'Dell XPS 15 (3456×2160)':261,'HP Spectre x360 14"':260,'Lenovo ThinkPad X1 Carbon (14")':210,'Surface Laptop 5 (13.5")':201,'Surface Pro 9 (13")':267,'iPad Pro 12.9" (M-series)':264,'iPad Air 11" (M3)':264,'Full HD Laptop 15.6" (1920×1080)':141,'Full HD Laptop 14" (1920×1080)':157,'2K Laptop 14" (2560×1600)':214,_A9:_C}
+def ppd(dpi,dist_cm):A=2.54/dpi;return 1./np.degrees(np.arctan(A/dist_cm))
+def circle_diam_px(freq_cpd,dpi,dist_cm,cycles):return max(60,int(round(ppd(dpi,dist_cm)/freq_cpd*cycles)))
+def validate_screen(dpi,dist_cm):
+	C=dist_cm;B=dpi;A={_t:round(ppd(B,C),1),_T:{}}
+	for D in ROW_LABELS:E=FREQS[D];H=CYCLES_IN_MASTER[D];F=circle_diam_px(E,B,C,H);G=ppd(B,C)/E;I=G>=2. and F>=60;A[_T][D]={'freq':E,'diam_px':F,'ppc':round(G,1),_c:I}
+	A[_u]=all(A[_c]for A in A[_T].values());return A
+GRATING_DIR=os.path.join(os.path.dirname(__file__),_AA,'gratings')
+BLANK_DIR=os.path.join(os.path.dirname(__file__),_AA,'blanks')
+GRATINGS_AVAILABLE=os.path.isdir(GRATING_DIR)
+def linear_to_srgb(L):return(np.power(np.clip(L,0,1),1/2.2)*255).astype(np.uint8)
+def make_grating_image(freq_cpd,michelson,diam_px,cycles):A=diam_px;E=np.linspace(0,cycles*2*np.pi,A);F=np.tile(E,(A,1));C=.5*(1+michelson*np.sin(F));G=D=A//2;H,I=np.ogrid[:A,:A];C[np.sqrt((I-D)**2+(H-G)**2)>D-1]=.5;B=linear_to_srgb(C);return Image.fromarray(np.stack([B,B,B],axis=-1),mode='RGB')
+def make_blank_image(diam_px):B=diam_px;A=int(linear_to_srgb(np.array([.5]))[0]);return Image.new('RGB',(B,B),(A,A,A))
+@st.cache_data(show_spinner=_B)
+def get_grating(row,score_label,diam_px):
+	C=score_label;B=diam_px;A=row
+	if GRATINGS_AVAILABLE:
+		D=os.path.join(GRATING_DIR,f"grating_{A}{C}.png")
+		if os.path.exists(D):return Image.open(D).resize((B,B),Image.LANCZOS)
+	E=SCORES_ALL.index(C);F=LINEAR_CS[A][E];G=1./F;return make_grating_image(FREQS[A],G,B,CYCLES_IN_MASTER[A])
+@st.cache_data(show_spinner=_B)
+def get_blank(row,diam_px):
+	A=diam_px
+	if GRATINGS_AVAILABLE:
+		B=os.path.join(BLANK_DIR,f"blank_{row}.png")
+		if os.path.exists(B):return Image.open(B).resize((A,A),Image.LANCZOS)
+	return make_blank_image(A)
+def generate_pdf(patient_name,patient_age,patient_gender,patient_mrn,tests):
+	p='sec';o='100%';d=patient_age;c='GRID';b='LEFTPADDING';a='BOTTOMPADDING';Z='TOPPADDING';Y='BACKGROUND';X='FONTSIZE';N=tests;L='Helvetica';J='FONTNAME';I='Helvetica-Bold';from reportlab.lib.pagesizes import A4;from reportlab.lib import colors as C;from reportlab.lib.units import cm as A;from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle as G;from reportlab.platypus import SimpleDocTemplate as q,Paragraph as H,Spacer as K,Table as O,TableStyle as P,HRFlowable as e,Image as r,KeepTogether as s;from reportlab.lib.enums import TA_CENTER as t;f=C.HexColor(_v);Q=C.HexColor('#1e293b');g=C.HexColor('#f1f5f9');R=C.HexColor(_w);A6=C.HexColor(_U);A7=C.HexColor('#f59e0b');A8=C.HexColor(_x);A9=C.HexColor('#ef4444');S=io.BytesIO();u=q(S,pagesize=A4,leftMargin=2*A,rightMargin=2*A,topMargin=2*A,bottomMargin=2*A);B=[];B.append(H('CS Pro',G('h',fontSize=20,textColor=f,fontName=I)));B.append(H('Contrast Sensitivity Function Report',G('s',fontSize=9,textColor=R,fontName=L,spaceAfter=4)));B.append(e(width=o,thickness=1,color=f));B.append(K(1,.4*A));v=[[patient_name,f"Age: {d} yrs · {patient_gender.capitalize()}",f"MRN: {patient_mrn or _J}",f"Date: {datetime.date.today().strftime("%d %b %Y")}"]];h=O(v,colWidths=[5*A,5*A,4*A,4*A]);h.setStyle(P([(J,(0,0),(-1,-1),L),(J,(0,0),(0,0),I),(X,(0,0),(-1,-1),9),(Y,(0,0),(-1,-1),g),(Z,(0,0),(-1,-1),6),(a,(0,0),(-1,-1),6),(b,(0,0),(-1,-1),8),(c,(0,0),(-1,-1),.5,C.HexColor(_d))]));B.append(h);B.append(K(1,.5*A))
+	if N:
+		w,E=plt.subplots(figsize=(8,4.2),dpi=140);T=np.arange(4);U=get_norm_band(_n if d<56 else _o);E.fill_between(T,U[_b],U[_a],color=_U,alpha=.12,label='Normal range (±1 SD)');E.plot(T,U[_I],color=_U,lw=1,ls=_V,alpha=.5);i=[_v,_x,'#8b5cf6','#10b981'];x={'OD':'-','OS':_V}
+		for(y,D)in enumerate(N):
+			F=[D.get(f"log_{A.lower()}")for A in ROW_LABELS];z,j=zip(*[(B,A)for(B,A)in enumerate(F)if A is not _C])if any(A is not _C for A in F)else([],[])
+			if j:A0=i[y%len(i)];E.plot(list(z),list(j),color=A0,ls=x.get(D[_F],'-'),lw=2.2,marker='o',ms=7,markerfacecolor=_y,markeredgewidth=2,label=f"{D[_F]} · {D.get(_K)or D[_L]}")
+		E.set_xticks(T);E.set_xticklabels([f"{A} cpd"for A in SPATIAL_FREQS]);E.set_ylim(0,2.6);E.set_ylabel(_AB);E.set_xlabel('Spatial Frequency (cpd)');E.grid(_A,color=_d,lw=.8);E.spines[['top','right']].set_visible(_B);E.legend(fontsize=8);plt.tight_layout();V=io.BytesIO();plt.savefig(V,format='png',bbox_inches='tight');plt.close(w);V.seek(0);B.append(s([H('Contrast Sensitivity Function Curve',G(p,fontSize=11,textColor=Q,fontName=I,spaceAfter=6)),r(V,width=16*A,height=9*A)]));B.append(K(1,.5*A))
+	B.append(H('Detailed Scores',G(p,fontSize=11,textColor=Q,fontName=I,spaceAfter=8)))
+	for D in N:
+		W=D.get(_N);A1,_=interpret_aulcsf(W);B.append(H(f"<b>{D[_F]}</b> · {D.get(_K)or""} · {D[_L]}",G('te',fontSize=10,fontName=L,spaceAfter=4)));A2=[['Row','Freq','Score','Log CS','Status']];k=[]
+		for M in ROW_LABELS:l=D.get(f"score_{M.lower()}");F=D.get(f"log_{M.lower()}");A3='Good'if F and F>=1.7 else'Borderline'if F and F>=1.4 else'Reduced'if F else'Not seen';k.append([M,ROW_NAMES[M],str(l)if l else'0',f"{F:.2f}"if F else _J,A3])
+		m=O(A2+k,colWidths=[1.5*A,3*A,3*A,3*A,4.5*A]);m.setStyle(P([(J,(0,0),(-1,0),I),(J,(0,1),(-1,-1),L),(X,(0,0),(-1,-1),9),(Y,(0,0),(-1,0),Q),('TEXTCOLOR',(0,0),(-1,0),C.white),('ROWBACKGROUNDS',(0,1),(-1,-1),[g,C.white]),(c,(0,0),(-1,-1),.5,C.HexColor(_d)),(Z,(0,0),(-1,-1),5),(a,(0,0),(-1,-1),5),(b,(0,0),(-1,-1),6),('ALIGN',(2,0),(-1,-1),'CENTER')]));B.append(m);A5=[[f"AULCSF: {W:.3f}"if W else'AULCSF: —',A1,f"Notes: {D.get(_Q)or _J}"]];n=O(A5,colWidths=[4*A,4*A,10*A]);n.setStyle(P([(J,(0,0),(0,0),I),(J,(1,0),(-1,0),L),(X,(0,0),(-1,-1),9),(Y,(0,0),(-1,-1),C.HexColor('#f0f9ff')),(c,(0,0),(-1,-1),.5,C.HexColor('#bae6fd')),(Z,(0,0),(-1,-1),5),(a,(0,0),(-1,-1),5),(b,(0,0),(-1,-1),6)]));B.append(n);B.append(K(1,.4*A))
+	B.append(e(width=o,thickness=.5,color=R));B.append(K(1,.2*A));B.append(H(f"CS Pro · Generated {datetime.datetime.now().strftime("%d %b %Y %H:%M")} · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al.",G('ft',fontSize=7,textColor=R,alignment=t)));u.build(B);S.seek(0);return S.getvalue()
+MAX_DISPLAY_PX=420
+MIN_DISPLAY_PX=50
+def pil_to_b64(img,size_px):A=size_px;C=img.resize((A,A),Image.LANCZOS);B=io.BytesIO();C.save(B,format='PNG');return base64.b64encode(B.getvalue()).decode()
+def show_circle(img,label,physics_px):B=label;A=int(np.clip(physics_px,MIN_DISPLAY_PX,MAX_DISPLAY_PX));C=pil_to_b64(img,A);st.markdown(f'''
         <div style="text-align:center; margin-bottom:8px;">
-          <div style="font-weight:600; font-size:15px; margin-bottom:6px; color:#1e293b;">{label}</div>
-          <img src="data:image/png;base64,{b64}"
-               style="width:{display_px}px; height:{display_px}px;
+          <div style="font-weight:600; font-size:15px; margin-bottom:6px; color:#1e293b;">{B}</div>
+          <img src="data:image/png;base64,{C}"
+               style="width:{A}px; height:{A}px;
                       border-radius:50%; display:inline-block;
                       box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
-               alt="{label}" />
+               alt="{B}" />
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SESSION STATE INIT
-# ══════════════════════════════════════════════════════════════════════════════
+        ''',unsafe_allow_html=_A)
 def init_state():
-    defaults = {
-        "patients": {}, "active_patient": None, "tests": {},
-        "screen_dpi": 96, "distance_cm": 200,
-        "screen_valid": validate_screen(96, 200),
-        "test_row_idx": 0, "test_score_idx": 0,
-        "test_answers": {}, "test_scores": {},
-        "test_grating_pos": {}, "test_done": False,
-        "test_started": False, "isi_active": False,
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
+	B={'patients':{},'active_patient':_C,'tests':{},_z:96,_A0:200,_A1:validate_screen(96,200),'test_row_idx':0,'test_score_idx':0,'test_answers':{},'test_scores':{},'test_grating_pos':{},'test_done':_B,'test_started':_B,_AC:_B}
+	for(A,C)in B.items():
+		if A not in st.session_state:st.session_state[A]=C
 init_state()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# LICENCE GATE
-# ══════════════════════════════════════════════════════════════════════════════
-# Inject JS to capture a stable browser fingerprint and store in sessionStorage.
-# On page load the JS writes fp to a hidden input; Streamlit reads it via query_params.
-st.markdown("""
-<script>
-(function(){
-  function getFingerprint(){
-    var nav = window.navigator;
-    var scr = window.screen;
-    var raw = [
-      nav.userAgent, nav.language,
-      scr.colorDepth, scr.width, scr.height,
-      new Date().getTimezoneOffset(),
-      nav.hardwareConcurrency||"",
-      nav.platform||""
-    ].join("|");
-    // simple djb2 hash
-    var h = 5381;
-    for(var i=0;i<raw.length;i++){ h=((h<<5)+h)+raw.charCodeAt(i); h=h&h; }
-    return "fp" + Math.abs(h).toString(16);
-  }
-  var fp = sessionStorage.getItem("cspro_fp") || getFingerprint();
-  sessionStorage.setItem("cspro_fp", fp);
-  // push fp into URL param so Streamlit can read it
-  var url = new URL(window.location.href);
-  if(url.searchParams.get("fp") !== fp){
-    url.searchParams.set("fp", fp);
-    window.history.replaceState({}, "", url.toString());
-    window.location.reload();
-  }
-})();
-</script>
-""", unsafe_allow_html=True)
-
-# Read fingerprint from URL params (injected by JS above)
-_params      = st.query_params
-_fingerprint = _params.get("fp", "unknown")
-
-# Check if admin mode requested
-_admin_mode  = _params.get("admin", "") == "1"
-
-# Read saved licence key from session state
-if "licence_key" not in st.session_state:
-    st.session_state["licence_key"]       = ""
-if "licence_ok" not in st.session_state:
-    st.session_state["licence_ok"]        = False
-if "licence_msg" not in st.session_state:
-    st.session_state["licence_msg"]       = ""
-if "admin_authed" not in st.session_state:
-    st.session_state["admin_authed"]      = False
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ADMIN PAGE (access via ?admin=1)
-# ──────────────────────────────────────────────────────────────────────────────
+st.markdown('\n<script>\n(function(){\n  function getFingerprint(){\n    var nav = window.navigator;\n    var scr = window.screen;\n    var raw = [\n      nav.userAgent, nav.language,\n      scr.colorDepth, scr.width, scr.height,\n      new Date().getTimezoneOffset(),\n      nav.hardwareConcurrency||"",\n      nav.platform||""\n    ].join("|");\n    // simple djb2 hash\n    var h = 5381;\n    for(var i=0;i<raw.length;i++){ h=((h<<5)+h)+raw.charCodeAt(i); h=h&h; }\n    return _d("ZnA=") + Math.abs(h).toString(16);\n  }\n  var fp = sessionStorage.getItem("cspro_fp") || getFingerprint();\n  sessionStorage.setItem("cspro_fp", fp);\n  // push fp into URL param so Streamlit can read it\n  var url = new URL(window.location.href);\n  if(url.searchParams.get(_d("ZnA=")) !== fp){\n    url.searchParams.set(_d("ZnA="), fp);\n    window.history.replaceState({}, "", url.toString());\n    window.location.reload();\n  }\n})();\n</script>\n',unsafe_allow_html=_A)
+_params=st.query_params
+_fingerprint=_params.get('fp','unknown')
+_admin_mode=_params.get('admin','')=='1'
+if _M not in st.session_state:st.session_state[_M]=''
+if _W not in st.session_state:st.session_state[_W]=_B
+if _R not in st.session_state:st.session_state[_R]=''
+if _e not in st.session_state:st.session_state[_e]=_B
 if _admin_mode:
-    st.markdown("## 🔐 CS Pro Admin — Licence Manager")
-    if not st.session_state["admin_authed"]:
-        pwd = st.text_input("Admin password", type="password", key="admin_pwd_input")
-        if st.button("Login", type="primary"):
-            if pwd == ADMIN_PASSWORD:
-                st.session_state["admin_authed"] = True
-                st.rerun()
-            else:
-                st.error("❌ Wrong password.")
-        st.stop()
-
-    # ── Generate new licence
-    st.markdown("### ➕ Generate New Licence")
-    with st.form("gen_form"):
-        col1, col2 = st.columns(2)
-        d_name  = col1.text_input("Doctor name", placeholder="Dr Ravi Sharma")
-        d_email = col2.text_input("Email (optional)", placeholder="doctor@clinic.com")
-        d_notes = st.text_input("Notes (optional)", placeholder="Purchased batch 1")
-        submitted = st.form_submit_button("🎫 Generate Key", type="primary", use_container_width=True)
-    if submitted:
-        if not d_name.strip():
-            st.error("Doctor name is required.")
-        else:
-            new_key, err = admin_create_licence(d_name.strip(), d_email.strip(), d_notes.strip())
-            if new_key:
-                st.success(f"✅ Licence created!")
-                st.code(new_key, language=None)
-                st.info(f"Send this key to **{d_name}**. It activates on first use and locks to their device.")
-            else:
-                st.error(f"❌ Error: {err}")
-
-    st.divider()
-
-    # ── All licences table
-    st.markdown("### 📊 All Licences")
-    if st.button("🔄 Refresh", key="admin_refresh"):
-        st.rerun()
-    licences = admin_list_licences()
-    if isinstance(licences, list) and licences:
-        for lic in licences:
-            status_icon = "🟢" if lic.get("is_active") else "🔴"
-            activated   = "✅ Activated" if lic.get("activated_at") else "⏳ Not yet used"
-            with st.expander(f"{status_icon} {lic['doctor_name']} — {lic['licence_key']}"):
-                st.markdown(f"**Email:** {lic.get('doctor_email') or '—'}")
-                st.markdown(f"**Status:** {'Active' if lic.get('is_active') else '🔴 Revoked'}")
-                st.markdown(f"**Device:** {activated}")
-                st.markdown(f"**Fingerprint:** `{lic.get('device_fingerprint') or 'none'}`")
-                st.markdown(f"**Created:** {lic['created_at'][:10]}")
-                st.markdown(f"**Notes:** {lic.get('notes') or '—'}")
-                c1, c2, c3 = st.columns(3)
-                if lic.get("is_active"):
-                    if c1.button("🔴 Revoke", key=f"rev_{lic['id']}"):
-                        admin_revoke_licence(lic["licence_key"])
-                        st.success("Revoked.")
-                        st.rerun()
-                else:
-                    if c1.button("🟢 Reactivate", key=f"react_{lic['id']}"):
-                        admin_reactivate_licence(lic["licence_key"])
-                        st.success("Reactivated.")
-                        st.rerun()
-                if c2.button("🖱️ Reset device lock", key=f"reset_{lic['id']}",
-                             help="Clears fingerprint so key can be used on a new device"):
-                    _sb_request("PATCH", f"cspro_licences?licence_key=eq.{lic['licence_key']}",
-                                {"device_fingerprint": None, "activated_at": None})
-                    st.success("🔄 Device lock reset. Key can be activated on a new device.")
-                    st.rerun()
-    else:
-        st.info("No licences yet. Generate one above.")
-    st.stop()   # Do not show main app in admin mode
-
-# ──────────────────────────────────────────────────────────────────────────────
-# LICENCE GATE SCREEN (shown before app if not validated)
-# ──────────────────────────────────────────────────────────────────────────────
-if not st.session_state["licence_ok"]:
-    # Centre the gate card
-    _, col, _ = st.columns([1, 2, 1])
-    with col:
-        st.markdown("""
-        <div style="text-align:center; padding: 40px 0 20px;">
-          <span style="font-size:56px;">👁️</span>
-          <h1 style="margin:12px 0 4px; font-size:28px; font-weight:700;">CS Pro</h1>
-          <p style="color:#64748b; font-size:15px; margin:0;">Contrast Sensitivity Analyser</p>
-          <p style="color:#64748b; font-size:13px; margin-top:4px;">VectorVision CSV-1000 Protocol</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("#### Enter your licence key")
-        key_input = st.text_input(
-            "Licence key", placeholder="CSPRO-XXXX-XXXX-XXXX",
-            key="licence_key_input",
-            label_visibility="collapsed"
-        ).strip().upper()
-
-        if st.button("🔓 Unlock CS Pro", type="primary", use_container_width=True):
-            if _fingerprint == "unknown":
-                st.warning("⚠️ Device fingerprint not ready yet. Please wait a moment and try again.")
-            else:
-                ok, msg = check_licence(key_input, _fingerprint)
-                st.session_state["licence_ok"]  = ok
-                st.session_state["licence_key"] = key_input
-                st.session_state["licence_msg"] = msg
-                st.rerun()
-
-        if st.session_state["licence_msg"]:
-            if st.session_state["licence_ok"]:
-                st.success(st.session_state["licence_msg"])
-            else:
-                st.error(st.session_state["licence_msg"])
-
-        st.markdown("""<div style="text-align:center; margin-top:24px; color:#94a3b8; font-size:12px;">
-        Licences are single-device only and cannot be shared.<br>
-        Contact <b>Dr Zain Khatib</b> to obtain a licence key.
-        </div>""", unsafe_allow_html=True)
-    st.stop()   # Block the rest of the app
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
-# ══════════════════════════════════════════════════════════════════════════════
+	st.markdown('## 🔐 CS Pro Admin — Licence Manager')
+	if not st.session_state[_e]:
+		pwd=st.text_input('Admin password',type='password',key='admin_pwd_input')
+		if st.button('Login',type=_S):
+			if pwd==ADMIN_PASSWORD:st.session_state[_e]=_A;st.rerun()
+			else:st.error('❌ Wrong password.')
+		st.stop()
+	st.markdown('### ➕ Generate New Licence')
+	with st.form('gen_form'):col1,col2=st.columns(2);d_name=col1.text_input('Doctor name',placeholder='Dr Ravi Sharma');d_email=col2.text_input('Email (optional)',placeholder='doctor@clinic.com');d_notes=st.text_input('Notes (optional)',placeholder='Purchased batch 1');submitted=st.form_submit_button('🎫 Generate Key',type=_S,use_container_width=_A)
+	if submitted:
+		if not d_name.strip():st.error('Doctor name is required.')
+		else:
+			new_key,err=admin_create_licence(d_name.strip(),d_email.strip(),d_notes.strip())
+			if new_key:st.success(f"✅ Licence created!");st.code(new_key,language=_C);st.info(f"Send this key to **{d_name}**. It activates on first use and locks to their device.")
+			else:st.error(f"❌ Error: {err}")
+	st.divider();st.markdown('### 📊 All Licences')
+	if st.button('🔄 Refresh',key='admin_refresh'):st.rerun()
+	licences=admin_list_licences()
+	if isinstance(licences,list)and licences:
+		for lic in licences:
+			status_icon='🟢'if lic.get(_P)else'🔴';activated='✅ Activated'if lic.get(_m)else'⏳ Not yet used'
+			with st.expander(f"{status_icon} {lic[_A7]} — {lic[_M]}"):
+				st.markdown(f"**Email:** {lic.get(_A8)or _J}");st.markdown(f"**Status:** {"Active"if lic.get(_P)else"🔴 Revoked"}");st.markdown(f"**Device:** {activated}");st.markdown(f"**Fingerprint:** `{lic.get(_Y)or"none"}`");st.markdown(f"**Created:** {lic["created_at"][:10]}");st.markdown(f"**Notes:** {lic.get(_Q)or _J}");c1,c2,c3=st.columns(3)
+				if lic.get(_P):
+					if c1.button('🔴 Revoke',key=f"rev_{lic["id"]}"):admin_revoke_licence(lic[_M]);st.success('Revoked.');st.rerun()
+				elif c1.button('🟢 Reactivate',key=f"react_{lic["id"]}"):admin_reactivate_licence(lic[_M]);st.success('Reactivated.');st.rerun()
+				if c2.button('🖱️ Reset device lock',key=f"reset_{lic["id"]}",help='Clears fingerprint so key can be used on a new device'):_sb_request(_X,f"cspro_licences?licence_key=eq.{lic[_M]}",{_Y:_C,_m:_C});st.success('🔄 Device lock reset. Key can be activated on a new device.');st.rerun()
+	else:st.info('No licences yet. Generate one above.')
+	st.stop()
+if not st.session_state[_W]:
+	_,col,_=st.columns([1,2,1])
+	with col:
+		st.markdown('\n        <div style="text-align:center; padding: 40px 0 20px;">\n          <span style="font-size:56px;">👁️</span>\n          <h1 style="margin:12px 0 4px; font-size:28px; font-weight:700;">CS Pro</h1>\n          <p style="color:#64748b; font-size:15px; margin:0;">Contrast Sensitivity Analyser</p>\n          <p style="color:#64748b; font-size:13px; margin-top:4px;">VectorVision CSV-1000 Protocol</p>\n        </div>\n        ',unsafe_allow_html=_A);st.markdown('#### Enter your licence key');key_input=st.text_input('Licence key',placeholder='CSPRO-XXXX-XXXX-XXXX',key='licence_key_input',label_visibility=_AD).strip().upper()
+		if st.button('🔓 Unlock CS Pro',type=_S,use_container_width=_A):
+			if _fingerprint=='unknown':st.warning('⚠️ Device fingerprint not ready yet. Please wait a moment and try again.')
+			else:ok,msg=check_licence(key_input,_fingerprint);st.session_state[_W]=ok;st.session_state[_M]=key_input;st.session_state[_R]=msg;st.rerun()
+		if st.session_state[_R]:
+			if st.session_state[_W]:st.success(st.session_state[_R])
+			else:st.error(st.session_state[_R])
+		st.markdown('<div style="text-align:center; margin-top:24px; color:#94a3b8; font-size:12px;">\n        Licences are single-device only and cannot be shared.<br>\n        Contact <b>Dr Zain Khatib</b> to obtain a licence key.\n        </div>',unsafe_allow_html=_A)
+	st.stop()
 with st.sidebar:
-    st.markdown("## 👁️ CS Pro")
-    st.caption("Near Vision Contrast Sensitivity")
-    st.divider()
-
-    # ── Screen setup (always visible) ─────────────────────────────────────────
-    st.markdown("### 🖥️ Screen Setup")
-    screen_choice = st.selectbox("Screen type", list(COMMON_SCREENS.keys()), key="screen_choice")
-    if screen_choice == "Custom (enter DPI)":
-        dpi = st.number_input("DPI / PPI", min_value=60, max_value=600, value=96, step=1)
-    else:
-        dpi = COMMON_SCREENS[screen_choice]
-        st.caption(f"DPI: **{dpi}**")
-
-    dist_cm = st.number_input("Testing distance (cm)", min_value=30, max_value=200,
-                               value=50, step=5, key="distance_cm_input")
-
-    val = validate_screen(dpi, dist_cm)
-    st.session_state["screen_dpi"] = dpi
-    st.session_state["distance_cm"] = dist_cm
-    st.session_state["screen_valid"] = val
-
-    if val["overall_ok"]:
-        st.success(f"✅ Valid · {val['ppd']} px/°")
-    else:
-        bad = [r for r,rv in val["rows"].items() if not rv["ok"]]
-        st.warning(f"⚠️ Rows {', '.join(bad)} may not render accurately at this distance")
-
-    with st.expander("Circle sizes"):
-        for row in ROW_LABELS:
-            rv = val["rows"][row]
-            icon = "✅" if rv["ok"] else "⚠️"
-            st.caption(f"{icon} Row {row} ({rv['freq']}cpd): **{rv['diam_px']}px**")
-
-    st.divider()
-
-    # ── Add patient ───────────────────────────────────────────────────────────
-    st.markdown("### Add Patient")
-    with st.form("add_patient", clear_on_submit=True):
-        p_name   = st.text_input("Full Name *", placeholder="e.g. Ramesh Kumar")
-        p_age    = st.number_input("Age *", min_value=1, max_value=120, value=45)
-        p_gender = st.selectbox("Gender *", ["Male","Female","Other"])
-        p_mrn    = st.text_input("MRN / ID", placeholder="OPH-2026-001")
-        if st.form_submit_button("➕ Add Patient", use_container_width=True):
-            if p_name.strip():
-                key = p_mrn.strip() or p_name.strip()
-                st.session_state.patients[key] = {
-                    "name":p_name.strip(),"age":int(p_age),
-                    "gender":p_gender,"mrn":p_mrn.strip()
-                }
-                if key not in st.session_state.tests:
-                    st.session_state.tests[key] = []
-                st.session_state.active_patient = key
-                st.success(f"Added {p_name}")
-
-    st.divider()
-
-    # ── Select patient ────────────────────────────────────────────────────────
-    st.markdown("### Select Patient")
-    if st.session_state.patients:
-        keys = list(st.session_state.patients.keys())
-        labels = [f"{st.session_state.patients[k]['name']}" for k in keys]
-        idx = st.selectbox("Patient", range(len(keys)),
-                           format_func=lambda i: labels[i], key="patient_selector")
-        st.session_state.active_patient = keys[idx]
-    else:
-        st.info("No patients yet.")
-
-    st.divider()
-    st.caption("VectorVision CSV-1000 protocol · 4 spatial frequencies")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN AREA
-# ══════════════════════════════════════════════════════════════════════════════
-if not st.session_state.active_patient:
-    st.markdown("## Welcome to CS Pro")
-    st.markdown("""
-**CS Pro** is a contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at testing distances of **50 cm to 200 cm**.
-
-**Getting started:**
-1. **Select your laptop model** in the sidebar — sets the correct DPI automatically
-2. **Set screen brightness to 50%** before starting — critical for accurate results
-3. **Add a patient** using the sidebar form
-4. Go to **🔬 Live Test** tab to run the sinusoidal grating test
-5. Or use **📝 Manual Entry** to type in scores from a physical chart
-6. **📈 CS Graph** shows the contrast sensitivity curve with age-norm bands
-7. **⬇️ Download PDF** for the full clinical report
-    """)
-    st.info("👈 Select your laptop model and set screen brightness to 50%, then add a patient to begin.")
-    st.stop()
-
-pk = st.session_state.active_patient
-patient = st.session_state.patients[pk]
-tests_list = st.session_state.tests.get(pk, [])
-
-# Patient header
-col_h, col_dl = st.columns([3, 1])
-with col_h:
-    st.markdown(f"## {patient['name']}")
-    st.caption(f"{patient['age']} yrs · {patient['gender']}" +
-               (f" · `{patient['mrn']}`" if patient.get('mrn') else ""))
+	st.markdown('## 👁️ CS Pro');st.caption('Near Vision Contrast Sensitivity');st.divider();st.markdown('### 🖥️ Screen Setup');screen_choice=st.selectbox('Screen type',list(COMMON_SCREENS.keys()),key='screen_choice')
+	if screen_choice==_A9:dpi=st.number_input('DPI / PPI',min_value=60,max_value=600,value=96,step=1)
+	else:dpi=COMMON_SCREENS[screen_choice];st.caption(f"DPI: **{dpi}**")
+	dist_cm=st.number_input('Testing distance (cm)',min_value=30,max_value=200,value=50,step=5,key='distance_cm_input');val=validate_screen(dpi,dist_cm);st.session_state[_z]=dpi;st.session_state[_A0]=dist_cm;st.session_state[_A1]=val
+	if val[_u]:st.success(f"✅ Valid · {val[_t]} px/°")
+	else:bad=[A for(A,B)in val[_T].items()if not B[_c]];st.warning(f"⚠️ Rows {", ".join(bad)} may not render accurately at this distance")
+	with st.expander('Circle sizes'):
+		for row in ROW_LABELS:rv=val[_T][row];icon='✅'if rv[_c]else'⚠️';st.caption(f"{icon} Row {row} ({rv["freq"]}cpd): **{rv["diam_px"]}px**")
+	st.divider();st.markdown('### Add Patient')
+	with st.form('add_patient',clear_on_submit=_A):
+		p_name=st.text_input('Full Name *',placeholder='e.g. Ramesh Kumar');p_age=st.number_input('Age *',min_value=1,max_value=120,value=45);p_gender=st.selectbox('Gender *',['Male','Female','Other']);p_mrn=st.text_input('MRN / ID',placeholder='OPH-2026-001')
+		if st.form_submit_button('➕ Add Patient',use_container_width=_A):
+			if p_name.strip():
+				key=p_mrn.strip()or p_name.strip();st.session_state.patients[key]={_O:p_name.strip(),_f:int(p_age),_A2:p_gender,_g:p_mrn.strip()}
+				if key not in st.session_state.tests:st.session_state.tests[key]=[]
+				st.session_state.active_patient=key;st.success(f"Added {p_name}")
+	st.divider();st.markdown('### Select Patient')
+	if st.session_state.patients:keys=list(st.session_state.patients.keys());labels=[f"{st.session_state.patients[A][_O]}"for A in keys];idx=st.selectbox('Patient',range(len(keys)),format_func=lambda i:labels[i],key='patient_selector');st.session_state.active_patient=keys[idx]
+	else:st.info('No patients yet.')
+	st.divider();st.caption('VectorVision CSV-1000 protocol · 4 spatial frequencies')
+if not st.session_state.active_patient:st.markdown('## Welcome to CS Pro');st.markdown('\n**CS Pro** is a contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at testing distances of **50 cm to 200 cm**.\n\n**Getting started:**\n1. **Select your laptop model** in the sidebar — sets the correct DPI automatically\n2. **Set screen brightness to 50%** before starting — critical for accurate results\n3. **Add a patient** using the sidebar form\n4. Go to **🔬 Live Test** tab to run the sinusoidal grating test\n5. Or use **📝 Manual Entry** to type in scores from a physical chart\n6. **📈 CS Graph** shows the contrast sensitivity curve with age-norm bands\n7. **⬇️ Download PDF** for the full clinical report\n    ');st.info('👈 Select your laptop model and set screen brightness to 50%, then add a patient to begin.');st.stop()
+pk=st.session_state.active_patient
+patient=st.session_state.patients[pk]
+tests_list=st.session_state.tests.get(pk,[])
+col_h,col_dl=st.columns([3,1])
+with col_h:st.markdown(f"## {patient[_O]}");st.caption(f"{patient[_f]} yrs · {patient[_A2]}"+(f" · `{patient[_g]}`"if patient.get(_g)else''))
 with col_dl:
-    if tests_list:
-        pdf_bytes = generate_pdf(
-            patient["name"], patient["age"],
-            patient["gender"], patient.get("mrn",""), tests_list
-        )
-        st.download_button(
-            "⬇️ Download PDF Report", data=pdf_bytes,
-            file_name=f"CVPRO_{patient['name'].replace(' ','_')}_{datetime.date.today()}.pdf",
-            mime="application/pdf", use_container_width=True,
-        )
-
+	if tests_list:pdf_bytes=generate_pdf(patient[_O],patient[_f],patient[_A2],patient.get(_g,''),tests_list);st.download_button('⬇️ Download PDF Report',data=pdf_bytes,file_name=f"CVPRO_{patient[_O].replace(" ","_")}_{datetime.date.today()}.pdf",mime='application/pdf',use_container_width=_A)
 st.divider()
-
-# Tabs
-tab_live, tab_manual, tab_chart, tab_history = st.tabs(
-    ["🔬 Live Test", "📝 Manual Entry", "📈 CS Graph", "📋 Test History"]
-)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB — LIVE TEST
-# ══════════════════════════════════════════════════════════════════════════════
+tab_live,tab_manual,tab_chart,tab_history=st.tabs(['🔬 Live Test','📝 Manual Entry','📈 CS Graph','📋 Test History'])
 with tab_live:
-    dpi      = st.session_state["screen_dpi"]
-    dist_cm  = st.session_state["distance_cm"]
-    scr_val  = st.session_state["screen_valid"]
-
-    st.markdown('<p class="section-hdr">🔬 Live Sinusoidal Grating Test</p>',
-                unsafe_allow_html=True)
-
-    # Screen status banner
-    if scr_val["overall_ok"]:
-        st.success(f"Screen: {dpi} DPI · {dist_cm} cm · {scr_val['ppd']} px/° — All frequencies valid ✅")
-    else:
-        st.warning(f"⚠️ Screen setup may not render all frequencies accurately. Adjust distance in sidebar.")
-
-    with st.expander("📋 Pre-test checklist — expand before starting"):
-        st.markdown("""
-| Item | Requirement |
-|---|---|
-| Testing distance | **50 cm – 200 cm** from laptop screen (adjustable in sidebar) |
-| Screen brightness | **50%** — do NOT exceed; higher brightness causes false positives |
-| Room lighting | Normal ambient indoor light (no direct glare on screen) |
-| Screen angle | Tilt screen so patient sees it straight-on, no reflections |
-| Patient correction | Best corrected vision — use appropriate correction for the selected distance |
-| Eye being tested | Occlude other eye with palm or occluder |
-| Adaptation | 30 seconds in room light before starting |
-| Screen preset | Select your exact laptop model in the sidebar |
-        """)
-
-    with st.expander("🔬 Scientific basis — how CS Pro generates authentic gratings"):
-        st.markdown("""
-## How CS Pro Produces Clinically Valid Contrast Sensitivity Gratings
-
-### The core question: can a laptop screen replace a ₹7 lakh calibrated chart?
-
-The answer lies in understanding what the CSV-1000 actually tests — and replicating that precisely in software.
-
----
-
-### Step 1 — The screen as a calibrated ruler
-
-Every modern laptop display is a physical grid of pixels, and the size of each pixel is fixed by the manufacturer.
-From the screen's **DPI (dots per inch)** — which we know precisely for each device — we can calculate the physical width of one pixel:
-
-> **Pixel size = 2.54 cm ÷ DPI**
-
-On a Samsung Galaxy Book4 Pro (212 DPI), each pixel is **0.01198 cm wide** — about 0.12 mm. This is a fixed, known quantity, as precise as any ruler.
-
----
-
-### Step 2 — Converting pixels to degrees of visual angle
-
-Contrast sensitivity is measured in **cycles per degree (cpd)** of visual angle. The visual angle subtended by one pixel depends on how far the eye is from the screen:
-
-> **Pixels per degree = 1 ÷ arctan(pixel size ÷ viewing distance)**
-
-At the default 50 cm on the Samsung Galaxy Book4 Pro (example calculation):
-
-> 1 ÷ arctan(0.01198 ÷ 50) = **72.8 pixels per degree**
-
-This means we know, to sub-pixel accuracy, how many pixels correspond to one degree of visual angle at your testing distance.
-
----
-
-### Step 3 — Computing the exact grating diameter
-
-For each spatial frequency, we calculate how many pixels are needed to display exactly the right number of cycles across the correct visual angle:
-
-> **Grating diameter (px) = (pixels per degree ÷ frequency in cpd) × number of cycles**
-
-For Row A (3 cpd) at 50 cm on the Galaxy Book4 Pro (example):
-
-> (72.8 ÷ 3) × 5 = **121 pixels**
-
-This grating subtends exactly the correct visual angle — the same 3 cpd stimulus that the CSV-1000 presents, now computed from first principles.
-
----
-
-### Step 4 — Mathematically pure sine wave luminance
-
-The luminance of each pixel across the grating follows a true sinusoidal function:
-
-> **L(x) = 0.5 × (1 + C × sin(2π · f · x))**
-
-Where **C** is the Michelson contrast — taken directly from VectorVision's published CSV-1000 normative data (e.g., Row B position 8 has a linear CS of 193, so C = 1/193 = 0.0052).
-
-There are **no hard edges, no square waves, no harmonic distortion** — only a single pure spatial frequency, identical in mathematical form to what the CSV-1000 projects.
-
----
-
-### Step 5 — Gamma correction ensures physical accuracy
-
-A pixel value of 128 (mid-grey) does not produce half the light output of 255 (white) — screens are non-linear. Without correction, the sine wave would be distorted in physical luminance.
-
-CS Pro applies the **standard sRGB gamma correction (γ = 2.2)** to every pixel before display:
-
-> **Pixel value = (L)^(1/2.2) × 255**
-
-This ensures that what the screen physically emits is a true sinusoidal luminance pattern — not just a sinusoidal pixel value pattern. This is the same correction applied in laboratory-grade psychophysics software.
-
----
-
-### Step 6 — Identical contrast values to CSV-1000
-
-The Michelson contrast at each of the 36 test positions is taken directly from VectorVision's published linear CS norms. The scoring system, log CS values, AULCSF calculation, and age-normative bands are all identical to those used with the physical CSV-1000 chart.
-
----
-
-### What is different from the CSV-1000
-
-| Factor | CSV-1000 | CS Pro |
-|---|---|---|
-| Grating physics | Sinusoidal ✅ | Sinusoidal ✅ |
-| Contrast values | VectorVision norms ✅ | Identical ✅ |
-| Spatial frequency accuracy | Hardware calibrated | Computed from DPI + distance ✅ |
-| Luminance | Fixed 85 cd/m² (backlit) | ~80–100 cd/m² at 50% brightness ⚠ |
-| Testing distance | 200 cm (far vision) | 50 – 200 cm (adjustable) ✅ |
-| Scoring & norms | Same | Identical ✅ |
-
-The most meaningful difference is **luminance**. Luminance is controlled by standardising screen brightness at 50%. CS Pro supports testing distances from **50 cm to 200 cm** — adjust in the sidebar to match your clinical setup. Results at near distances (50–80 cm) reflect near vision contrast sensitivity and should not be directly equated to far-distance CSV-1000 scores without acknowledging this difference. At 200 cm, results are directly comparable to the standard CSV-1000 protocol.
-        """)
-
-    st.divider()
-
-    # ── Test state machine ────────────────────────────────────────────────────
-    if not st.session_state.test_started:
-        eye_choice = st.selectbox("Eye to test", ["OD (Right eye)","OS (Left eye)"],
-                                  key="live_eye_choice")
-        visit_label = st.text_input("Visit label", placeholder="e.g. Pre-op, Post-op 1M",
-                                    key="live_visit_label")
-        if st.button("▶️ Start Test", type="primary", use_container_width=False):
-            st.session_state.test_started    = True
-            st.session_state.test_row_idx    = 0
-            st.session_state.test_score_idx  = 0
-            st.session_state.test_answers    = {}
-            st.session_state.test_scores     = {}
-            st.session_state.test_done       = False
-            st.session_state.test_eye        = eye_choice.split()[0]
-            st.session_state.test_visit_label= visit_label
-            # Pre-randomise: grating goes to "A" or "B" each position
-            # Guarantee no more than 2 consecutive same sides
-            pos = {}
-            last = None
-            run  = 0
-            for row in ROW_LABELS:
-                for sc in SCORES_ALL:
-                    choices = ["A", "B"]
-                    if run >= 3:          # force a switch after 3 in a row (max run = 3)
-                        choices = ["B" if last == "A" else "A"]
-                    side = random.choice(choices)
-                    pos[(row, sc)] = side
-                    run = run + 1 if side == last else 1
-                    last = side
-            st.session_state.test_grating_pos = pos
-            st.rerun()
-
-    elif st.session_state.test_done:
-        # ── Results ───────────────────────────────────────────────────────────
-        st.success("✅ Test complete!")
-        scores_idx = st.session_state.test_scores  # {row: last_correct_idx (0=S)}
-        final = {}
-        log_vals = []
-        for row in ROW_LABELS:
-            idx = scores_idx.get(row, 0)
-            # idx 0 means only sample (S) seen or nothing → clinical score 0
-            # idx ≥1 means scored 1..8
-            clinical = idx  # idx directly maps: 0→0, 1→score1 .. 8→score8
-            final[row] = clinical
-            log_vals.append(score_to_log(row, clinical))
-
-        aulcsf = calc_aulcsf(log_vals)
-        interp_label, _ = interpret_aulcsf(aulcsf)
-
-        c1,c2,c3,c4 = st.columns(4)
-        badge_map = {"Normal":"🟢","Mildly reduced":"🟡",
-                     "Moderately reduced":"🟠","Severely reduced":"🔴"}
-        for col, row in zip([c1,c2,c3,c4], ROW_LABELS):
-            lv = score_to_log(row, final[row])
-            col.metric(f"Row {row} · {ROW_NAMES[row]}",
-                       str(final[row]) if final[row] else "0",
-                       f"logCS {lv:.2f}" if lv else "Not seen")
-
-        if aulcsf:
-            st.markdown(f"### AULCSF: `{aulcsf:.3f}` "
-                        f"{badge_map.get(interp_label,'⚪')} {interp_label}")
-
-        col_save, col_restart = st.columns(2)
-        with col_save:
-            if st.button("💾 Save to Patient Record", type="primary", use_container_width=True):
-                test_rec = {
-                    "visit_date":  str(datetime.date.today()),
-                    "visit_label": st.session_state.get("test_visit_label",""),
-                    "eye":         st.session_state.get("test_eye","OD"),
-                    "score_a": final["A"],"score_b": final["B"],
-                    "score_c": final["C"],"score_d": final["D"],
-                    "log_a": score_to_log("A",final["A"]),
-                    "log_b": score_to_log("B",final["B"]),
-                    "log_c": score_to_log("C",final["C"]),
-                    "log_d": score_to_log("D",final["D"]),
-                    "aulcsf": aulcsf, "notes": "",
-                }
-                st.session_state.tests[pk].insert(0, test_rec)
-                st.session_state.test_started = False
-                st.session_state.test_done    = False
-                st.success("Saved! Switch to CS Graph or Test History to view.")
-        with col_restart:
-            if st.button("🔄 Restart Test", use_container_width=True):
-                st.session_state.test_started = False
-                st.session_state.test_done    = False
-                st.rerun()
-
-    else:
-        # ── Inter-stimulus interval (ISI) ─────────────────────────────────────
-        if st.session_state.get("isi_active", False):
-            st.session_state.isi_active = False
-            isi_slot = st.empty()
-            isi_slot.markdown(
-                """
-                <div style="
-                    display:flex; flex-direction:column;
-                    align-items:center; justify-content:center;
-                    height:320px; gap:32px;
-                ">
-                  <div style="display:flex; gap:80px;">
-                    <div style="
-                        width:180px; height:180px; border-radius:50%;
-                        background:#d1d5db;
-                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);
-                    "></div>
-                    <div style="
-                        width:180px; height:180px; border-radius:50%;
-                        background:#d1d5db;
-                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);
-                    "></div>
-                  </div>
-                  <div style="color:#94a3b8; font-size:13px; letter-spacing:0.05em;">next stimulus loading…</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            time.sleep(0.45)
-            isi_slot.empty()
-            st.rerun()
-
-        # ── Show current grating pair ─────────────────────────────────────────
-        row_idx   = st.session_state.test_row_idx
-        score_idx = st.session_state.test_score_idx
-
-        if row_idx >= len(ROW_LABELS):
-            st.session_state.test_done = True
-            st.rerun()
-
-        row   = ROW_LABELS[row_idx]
-        score = SCORES_ALL[score_idx]
-        freq  = FREQS[row]
-        diam  = circle_diam_px(freq, dpi, dist_cm, CYCLES_IN_MASTER[row])
-        pos   = st.session_state.test_grating_pos.get((row, score), "A")
-
-        # Progress bar
-        done = row_idx * 9 + score_idx
-        st.progress(done / 36, text=f"Row {row} ({ROW_NAMES[row]}) — Position {score}/8")
-
-        # Load images
-        grating_img = get_grating(row, score, diam)
-        blank_img   = get_blank(row, diam)
-
-        img_A = grating_img if pos == "A" else blank_img
-        img_B = grating_img if pos == "B" else blank_img
-
-        # Display — always side-by-side A | B, grating randomly in A or B
-        display_px = int(np.clip(diam, MIN_DISPLAY_PX, MAX_DISPLAY_PX))
-        st.markdown("### Which circle has the **stripes**?")
-        st.caption(f"Row {row} · {freq} cpd · Position {score} · "
-                   f"Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f} · "
-                   f"Circle: {display_px}px ({dist_cm} cm, {dpi} DPI)")
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            show_circle(img_A, "A", diam)
-        with col_b:
-            show_circle(img_B, "B", diam)
-
-        # Response buttons
-        st.markdown("#### Patient response:")
-        b1, b2, b3, b4 = st.columns(4)
-
-        def record(response):
-            correct = response == pos
-            st.session_state.test_answers[(row, score)] = {
-                "response": response, "correct": correct}
-            if correct:
-                st.session_state.test_scores[row] = score_idx
-            nxt = score_idx + 1
-            if nxt >= len(SCORES_ALL):
-                st.session_state.test_row_idx  += 1
-                st.session_state.test_score_idx = 0
-            else:
-                st.session_state.test_score_idx = nxt
-            st.session_state.isi_active = True  # trigger ISI blank
-
-        with b1:
-            if st.button("🅰️  Circle A", use_container_width=True, key=f"a_{row}{score}"):
-                record("A"); st.rerun()
-        with b2:
-            if st.button("🅱️  Circle B", use_container_width=True, key=f"b_{row}{score}"):
-                record("B"); st.rerun()
-        with b3:
-            if st.button("❌ Neither", use_container_width=True, key=f"n_{row}{score}"):
-                record("neither"); st.rerun()
-        with b4:
-            if st.button("⏭️ Next Row", use_container_width=True, key=f"s_{row}{score}"):
-                st.session_state.test_row_idx  += 1
-                st.session_state.test_score_idx = 0
-                st.session_state.isi_active = True
-                st.rerun()
-
-        if score == "S":
-            st.info("ℹ️ This is the **sample grating** — the stripes are clearly visible. "
-                    "Use this to show the patient what to look for.")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB — MANUAL ENTRY
-# ══════════════════════════════════════════════════════════════════════════════
+	dpi=st.session_state[_z];dist_cm=st.session_state[_A0];scr_val=st.session_state[_A1];st.markdown('<p class="section-hdr">🔬 Live Sinusoidal Grating Test</p>',unsafe_allow_html=_A)
+	if scr_val[_u]:st.success(f"Screen: {dpi} DPI · {dist_cm} cm · {scr_val[_t]} px/° — All frequencies valid ✅")
+	else:st.warning(f"⚠️ Screen setup may not render all frequencies accurately. Adjust distance in sidebar.")
+	with st.expander('📋 Pre-test checklist — expand before starting'):st.markdown('\n| Item | Requirement |\n|---|---|\n| Testing distance | **50 cm – 200 cm** from laptop screen (adjustable in sidebar) |\n| Screen brightness | **50%** — do NOT exceed; higher brightness causes false positives |\n| Room lighting | Normal ambient indoor light (no direct glare on screen) |\n| Screen angle | Tilt screen so patient sees it straight-on, no reflections |\n| Patient correction | Best corrected vision — use appropriate correction for the selected distance |\n| Eye being tested | Occlude other eye with palm or occluder |\n| Adaptation | 30 seconds in room light before starting |\n| Screen preset | Select your exact laptop model in the sidebar |\n        ')
+	with st.expander('🔬 Scientific basis — how CS Pro generates authentic gratings'):st.markdown("\n## How CS Pro Produces Clinically Valid Contrast Sensitivity Gratings\n\n### The core question: can a laptop screen replace a ₹7 lakh calibrated chart?\n\nThe answer lies in understanding what the CSV-1000 actually tests — and replicating that precisely in software.\n\n---\n\n### Step 1 — The screen as a calibrated ruler\n\nEvery modern laptop display is a physical grid of pixels, and the size of each pixel is fixed by the manufacturer.\nFrom the screen's **DPI (dots per inch)** — which we know precisely for each device — we can calculate the physical width of one pixel:\n\n> **Pixel size = 2.54 cm ÷ DPI**\n\nOn a Samsung Galaxy Book4 Pro (212 DPI), each pixel is **0.01198 cm wide** — about 0.12 mm. This is a fixed, known quantity, as precise as any ruler.\n\n---\n\n### Step 2 — Converting pixels to degrees of visual angle\n\nContrast sensitivity is measured in **cycles per degree (cpd)** of visual angle. The visual angle subtended by one pixel depends on how far the eye is from the screen:\n\n> **Pixels per degree = 1 ÷ arctan(pixel size ÷ viewing distance)**\n\nAt the default 50 cm on the Samsung Galaxy Book4 Pro (example calculation):\n\n> 1 ÷ arctan(0.01198 ÷ 50) = **72.8 pixels per degree**\n\nThis means we know, to sub-pixel accuracy, how many pixels correspond to one degree of visual angle at your testing distance.\n\n---\n\n### Step 3 — Computing the exact grating diameter\n\nFor each spatial frequency, we calculate how many pixels are needed to display exactly the right number of cycles across the correct visual angle:\n\n> **Grating diameter (px) = (pixels per degree ÷ frequency in cpd) × number of cycles**\n\nFor Row A (3 cpd) at 50 cm on the Galaxy Book4 Pro (example):\n\n> (72.8 ÷ 3) × 5 = **121 pixels**\n\nThis grating subtends exactly the correct visual angle — the same 3 cpd stimulus that the CSV-1000 presents, now computed from first principles.\n\n---\n\n### Step 4 — Mathematically pure sine wave luminance\n\nThe luminance of each pixel across the grating follows a true sinusoidal function:\n\n> **L(x) = 0.5 × (1 + C × sin(2π · f · x))**\n\nWhere **C** is the Michelson contrast — taken directly from VectorVision's published CSV-1000 normative data (e.g., Row B position 8 has a linear CS of 193, so C = 1/193 = 0.0052).\n\nThere are **no hard edges, no square waves, no harmonic distortion** — only a single pure spatial frequency, identical in mathematical form to what the CSV-1000 projects.\n\n---\n\n### Step 5 — Gamma correction ensures physical accuracy\n\nA pixel value of 128 (mid-grey) does not produce half the light output of 255 (white) — screens are non-linear. Without correction, the sine wave would be distorted in physical luminance.\n\nCS Pro applies the **standard sRGB gamma correction (γ = 2.2)** to every pixel before display:\n\n> **Pixel value = (L)^(1/2.2) × 255**\n\nThis ensures that what the screen physically emits is a true sinusoidal luminance pattern — not just a sinusoidal pixel value pattern. This is the same correction applied in laboratory-grade psychophysics software.\n\n---\n\n### Step 6 — Identical contrast values to CSV-1000\n\nThe Michelson contrast at each of the 36 test positions is taken directly from VectorVision's published linear CS norms. The scoring system, log CS values, AULCSF calculation, and age-normative bands are all identical to those used with the physical CSV-1000 chart.\n\n---\n\n### What is different from the CSV-1000\n\n| Factor | CSV-1000 | CS Pro |\n|---|---|---|\n| Grating physics | Sinusoidal ✅ | Sinusoidal ✅ |\n| Contrast values | VectorVision norms ✅ | Identical ✅ |\n| Spatial frequency accuracy | Hardware calibrated | Computed from DPI + distance ✅ |\n| Luminance | Fixed 85 cd/m² (backlit) | ~80–100 cd/m² at 50% brightness ⚠ |\n| Testing distance | 200 cm (far vision) | 50 – 200 cm (adjustable) ✅ |\n| Scoring & norms | Same | Identical ✅ |\n\nThe most meaningful difference is **luminance**. Luminance is controlled by standardising screen brightness at 50%. CS Pro supports testing distances from **50 cm to 200 cm** — adjust in the sidebar to match your clinical setup. Results at near distances (50–80 cm) reflect near vision contrast sensitivity and should not be directly equated to far-distance CSV-1000 scores without acknowledging this difference. At 200 cm, results are directly comparable to the standard CSV-1000 protocol.\n        ")
+	st.divider()
+	if not st.session_state.test_started:
+		eye_choice=st.selectbox('Eye to test',['OD (Right eye)','OS (Left eye)'],key='live_eye_choice');visit_label=st.text_input('Visit label',placeholder='e.g. Pre-op, Post-op 1M',key='live_visit_label')
+		if st.button('▶️ Start Test',type=_S,use_container_width=_B):
+			st.session_state.test_started=_A;st.session_state.test_row_idx=0;st.session_state.test_score_idx=0;st.session_state.test_answers={};st.session_state.test_scores={};st.session_state.test_done=_B;st.session_state.test_eye=eye_choice.split()[0];st.session_state.test_visit_label=visit_label;pos={};last=_C;run=0
+			for row in ROW_LABELS:
+				for sc in SCORES_ALL:
+					choices=[_D,_E]
+					if run>=3:choices=[_E if last==_D else _D]
+					side=random.choice(choices);pos[row,sc]=side;run=run+1 if side==last else 1;last=side
+			st.session_state.test_grating_pos=pos;st.rerun()
+	elif st.session_state.test_done:
+		st.success('✅ Test complete!');scores_idx=st.session_state.test_scores;final={};log_vals=[]
+		for row in ROW_LABELS:idx=scores_idx.get(row,0);clinical=idx;final[row]=clinical;log_vals.append(score_to_log(row,clinical))
+		aulcsf=calc_aulcsf(log_vals);interp_label,_=interpret_aulcsf(aulcsf);c1,c2,c3,c4=st.columns(4);badge_map={_p:'🟢',_q:'🟡',_r:'🟠',_s:'🔴'}
+		for(col,row)in zip([c1,c2,c3,c4],ROW_LABELS):lv=score_to_log(row,final[row]);col.metric(f"Row {row} · {ROW_NAMES[row]}",str(final[row])if final[row]else'0',f"logCS {lv:.2f}"if lv else'Not seen')
+		if aulcsf:st.markdown(f"### AULCSF: `{aulcsf:.3f}` {badge_map.get(interp_label,"⚪")} {interp_label}")
+		col_save,col_restart=st.columns(2)
+		with col_save:
+			if st.button('💾 Save to Patient Record',type=_S,use_container_width=_A):test_rec={_L:str(datetime.date.today()),_K:st.session_state.get('test_visit_label',''),_F:st.session_state.get('test_eye','OD'),_A3:final[_D],_A4:final[_E],_A5:final[_G],_A6:final[_H],_h:score_to_log(_D,final[_D]),_i:score_to_log(_E,final[_E]),_j:score_to_log(_G,final[_G]),_k:score_to_log(_H,final[_H]),_N:aulcsf,_Q:''};st.session_state.tests[pk].insert(0,test_rec);st.session_state.test_started=_B;st.session_state.test_done=_B;st.success('Saved! Switch to CS Graph or Test History to view.')
+		with col_restart:
+			if st.button('🔄 Restart Test',use_container_width=_A):st.session_state.test_started=_B;st.session_state.test_done=_B;st.rerun()
+	else:
+		if st.session_state.get(_AC,_B):st.session_state.isi_active=_B;isi_slot=st.empty();isi_slot.markdown('\n                <div style="\n                    display:flex; flex-direction:column;\n                    align-items:center; justify-content:center;\n                    height:320px; gap:32px;\n                ">\n                  <div style="display:flex; gap:80px;">\n                    <div style="\n                        width:180px; height:180px; border-radius:50%;\n                        background:#d1d5db;\n                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);\n                    "></div>\n                    <div style="\n                        width:180px; height:180px; border-radius:50%;\n                        background:#d1d5db;\n                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);\n                    "></div>\n                  </div>\n                  <div style="color:#94a3b8; font-size:13px; letter-spacing:0.05em;">next stimulus loading…</div>\n                </div>\n                ',unsafe_allow_html=_A);time.sleep(.45);isi_slot.empty();st.rerun()
+		row_idx=st.session_state.test_row_idx;score_idx=st.session_state.test_score_idx
+		if row_idx>=len(ROW_LABELS):st.session_state.test_done=_A;st.rerun()
+		row=ROW_LABELS[row_idx];score=SCORES_ALL[score_idx];freq=FREQS[row];diam=circle_diam_px(freq,dpi,dist_cm,CYCLES_IN_MASTER[row]);pos=st.session_state.test_grating_pos.get((row,score),_D);done=row_idx*9+score_idx;st.progress(done/36,text=f"Row {row} ({ROW_NAMES[row]}) — Position {score}/8");grating_img=get_grating(row,score,diam);blank_img=get_blank(row,diam);img_A=grating_img if pos==_D else blank_img;img_B=grating_img if pos==_E else blank_img;display_px=int(np.clip(diam,MIN_DISPLAY_PX,MAX_DISPLAY_PX));st.markdown('### Which circle has the **stripes**?');st.caption(f"Row {row} · {freq} cpd · Position {score} · Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f} · Circle: {display_px}px ({dist_cm} cm, {dpi} DPI)");col_a,col_b=st.columns(2)
+		with col_a:show_circle(img_A,_D,diam)
+		with col_b:show_circle(img_B,_E,diam)
+		st.markdown('#### Patient response:');b1,b2,b3,b4=st.columns(4)
+		def record(response):
+			A=response;B=A==pos;st.session_state.test_answers[row,score]={'response':A,'correct':B}
+			if B:st.session_state.test_scores[row]=score_idx
+			C=score_idx+1
+			if C>=len(SCORES_ALL):st.session_state.test_row_idx+=1;st.session_state.test_score_idx=0
+			else:st.session_state.test_score_idx=C
+			st.session_state.isi_active=_A
+		with b1:
+			if st.button('🅰️  Circle A',use_container_width=_A,key=f"a_{row}{score}"):record(_D);st.rerun()
+		with b2:
+			if st.button('🅱️  Circle B',use_container_width=_A,key=f"b_{row}{score}"):record(_E);st.rerun()
+		with b3:
+			if st.button('❌ Neither',use_container_width=_A,key=f"n_{row}{score}"):record('neither');st.rerun()
+		with b4:
+			if st.button('⏭️ Next Row',use_container_width=_A,key=f"s_{row}{score}"):st.session_state.test_row_idx+=1;st.session_state.test_score_idx=0;st.session_state.isi_active=_A;st.rerun()
+		if score=='S':st.info('ℹ️ This is the **sample grating** — the stripes are clearly visible. Use this to show the patient what to look for.')
 with tab_manual:
-    st.markdown('<p class="section-hdr">📝 Manual Score Entry</p>', unsafe_allow_html=True)
-    with st.form("manual_entry", clear_on_submit=True):
-        c1,c2,c3 = st.columns(3)
-        with c1: visit_date  = st.date_input("Date", value=datetime.date.today())
-        with c2:
-            eye = st.selectbox("Eye", ["OD (Right)","OS (Left)"])
-            eye_code = eye.split()[0]
-        with c3: visit_label = st.text_input("Visit Label", placeholder="Pre-op / Post-op 1M")
-
-        st.markdown("#### Scores — enter last correct position for each row")
-        sc1,sc2,sc3,sc4 = st.columns(4)
-        scores = {}
-        for col, row in zip([sc1,sc2,sc3,sc4], ROW_LABELS):
-            with col:
-                st.markdown(f"**Row {row}** · {ROW_NAMES[row]}")
-                scores[row] = st.selectbox(
-                    f"Score {row}", list(range(9)),
-                    format_func=lambda x: "0 — not seen" if x==0 else str(x),
-                    key=f"m_score_{row}", label_visibility="collapsed")
-                lv = score_to_log(row, scores[row])
-                if lv: st.caption(f"logCS: **{lv:.2f}**")
-
-        notes = st.text_area("Clinical Notes", placeholder="e.g. NS4 cataract · Post Phaco")
-
-        if st.form_submit_button("✅ Save", use_container_width=True, type="primary"):
-            log_vals = [score_to_log(r, scores[r]) for r in ROW_LABELS]
-            aulcsf = calc_aulcsf(log_vals)
-            rec = {
-                "visit_date":str(visit_date),"visit_label":visit_label.strip(),"eye":eye_code,
-                "score_a":scores["A"],"score_b":scores["B"],"score_c":scores["C"],"score_d":scores["D"],
-                "log_a":log_vals[0],"log_b":log_vals[1],"log_c":log_vals[2],"log_d":log_vals[3],
-                "aulcsf":aulcsf,"notes":notes.strip(),
-            }
-            st.session_state.tests[pk].insert(0, rec)
-            interp,_ = interpret_aulcsf(aulcsf)
-            st.success(f"Saved · AULCSF: {aulcsf:.3f} — {interp}" if aulcsf else "Saved")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB — CS GRAPH
-# ══════════════════════════════════════════════════════════════════════════════
+	st.markdown('<p class="section-hdr">📝 Manual Score Entry</p>',unsafe_allow_html=_A)
+	with st.form('manual_entry',clear_on_submit=_A):
+		c1,c2,c3=st.columns(3)
+		with c1:visit_date=st.date_input('Date',value=datetime.date.today())
+		with c2:eye=st.selectbox('Eye',['OD (Right)','OS (Left)']);eye_code=eye.split()[0]
+		with c3:visit_label=st.text_input('Visit Label',placeholder='Pre-op / Post-op 1M')
+		st.markdown('#### Scores — enter last correct position for each row');sc1,sc2,sc3,sc4=st.columns(4);scores={}
+		for(col,row)in zip([sc1,sc2,sc3,sc4],ROW_LABELS):
+			with col:
+				st.markdown(f"**Row {row}** · {ROW_NAMES[row]}");scores[row]=st.selectbox(f"Score {row}",list(range(9)),format_func=lambda x:'0 — not seen'if x==0 else str(x),key=f"m_score_{row}",label_visibility=_AD);lv=score_to_log(row,scores[row])
+				if lv:st.caption(f"logCS: **{lv:.2f}**")
+		notes=st.text_area('Clinical Notes',placeholder='e.g. NS4 cataract · Post Phaco')
+		if st.form_submit_button('✅ Save',use_container_width=_A,type=_S):log_vals=[score_to_log(A,scores[A])for A in ROW_LABELS];aulcsf=calc_aulcsf(log_vals);rec={_L:str(visit_date),_K:visit_label.strip(),_F:eye_code,_A3:scores[_D],_A4:scores[_E],_A5:scores[_G],_A6:scores[_H],_h:log_vals[0],_i:log_vals[1],_j:log_vals[2],_k:log_vals[3],_N:aulcsf,_Q:notes.strip()};st.session_state.tests[pk].insert(0,rec);interp,_=interpret_aulcsf(aulcsf);st.success(f"Saved · AULCSF: {aulcsf:.3f} — {interp}"if aulcsf else'Saved')
 with tab_chart:
-    st.markdown('<p class="section-hdr">📈 Contrast Sensitivity Function Curve</p>',
-                unsafe_allow_html=True)
-    if not tests_list:
-        st.info("Record at least one test to generate the CSF curve.")
-    else:
-        t_labels = [f"{t['eye']} · {t.get('visit_label') or 'Visit'} · {t['visit_date']}"
-                    for t in tests_list]
-        sel = st.multiselect("Select tests to display (max 4)", range(len(tests_list)),
-                             default=list(range(min(2, len(tests_list)))),
-                             format_func=lambda i: t_labels[i], max_selections=4)
-
-        show_y = st.checkbox("Show 20–55 yr norm band", value=True)
-        show_o = st.checkbox("Show 56–75 yr norm band", value=True)
-
-        if sel:
-            fig, ax = plt.subplots(figsize=(10,5.5), dpi=130)
-            ax.set_facecolor("#f8fafc"); fig.patch.set_facecolor("white")
-            xi = np.arange(4)
-            if show_y:
-                b = get_norm_band("20-55")
-                ax.fill_between(xi,b["lower"],b["upper"],color="#22c55e",alpha=0.13,label="Normal 20–55 yrs")
-                ax.plot(xi,b["mean"],color="#22c55e",lw=1.2,ls="--",alpha=0.6)
-            if show_o:
-                b = get_norm_band("56-75")
-                ax.fill_between(xi,b["lower"],b["upper"],color="#94a3b8",alpha=0.10,label="Normal 56–75 yrs")
-                ax.plot(xi,b["mean"],color="#94a3b8",lw=1.2,ls="--",alpha=0.5)
-
-            pal = ["#0ea5e9","#f97316","#8b5cf6","#10b981"]
-            ls_map = {"OD":"-","OS":"--"}
-            for i,ti in enumerate(sel):
-                t = tests_list[ti]
-                lv = [t.get(f"log_{r.lower()}") for r in ROW_LABELS]
-                pts = [(j,v) for j,v in enumerate(lv) if v is not None]
-                if pts:
-                    px2,py = zip(*pts)
-                    ax.plot(list(px2),list(py),color=pal[i%4],
-                            ls=ls_map.get(t["eye"],"-"),lw=2.5,
-                            marker="o",ms=8,markerfacecolor="white",markeredgewidth=2.2,
-                            label=f"{t['eye']} — {t.get('visit_label') or 'Visit'} ({t['visit_date']})",zorder=5)
-                    for px3,py3 in pts:
-                        ax.annotate(f"{py3:.2f}",(px3,py3),
-                                    textcoords="offset points",xytext=(0,10),
-                                    fontsize=8,color=pal[i%4],ha="center",fontweight="600")
-
-            ax.set_xticks(xi); ax.set_xticklabels([f"{f} cpd" for f in SPATIAL_FREQS],fontsize=11)
-            ax.set_ylim(0,2.7); ax.set_yticks([0,.5,1,1.5,2,2.5])
-            ax.set_ylabel("Log Contrast Sensitivity",fontsize=11)
-            ax.set_xlabel("Spatial Frequency (Cycles per Degree)",fontsize=11)
-            ax.grid(True,color="#e2e8f0",lw=0.8,alpha=0.8)
-            ax.spines[["top","right"]].set_visible(False)
-            ax.legend(fontsize=9,loc="upper right",framealpha=0.95)
-            ax.set_title(f"{patient['name']} ({patient['age']} yrs)",fontsize=12,fontweight="600",color="#1e293b")
-            plt.tight_layout()
-            st.pyplot(fig, use_container_width=True)
-            plt.close(fig)
-
-            st.markdown("#### AULCSF")
-            badge_map = {"Normal":"🟢","Mildly reduced":"🟡",
-                         "Moderately reduced":"🟠","Severely reduced":"🔴"}
-            cols = st.columns(len(sel))
-            for col,ti in zip(cols,sel):
-                t = tests_list[ti]
-                v = t.get("aulcsf")
-                interp,_ = interpret_aulcsf(v)
-                col.metric(f"{t['eye']} · {t.get('visit_label') or t['visit_date']}",
-                           f"{v:.3f}" if v else "—",
-                           f"{badge_map.get(interp,'⚪')} {interp}")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB — TEST HISTORY
-# ══════════════════════════════════════════════════════════════════════════════
+	st.markdown('<p class="section-hdr">📈 Contrast Sensitivity Function Curve</p>',unsafe_allow_html=_A)
+	if not tests_list:st.info('Record at least one test to generate the CSF curve.')
+	else:
+		t_labels=[f"{A[_F]} · {A.get(_K)or _l} · {A[_L]}"for A in tests_list];sel=st.multiselect('Select tests to display (max 4)',range(len(tests_list)),default=list(range(min(2,len(tests_list)))),format_func=lambda i:t_labels[i],max_selections=4);show_y=st.checkbox('Show 20–55 yr norm band',value=_A);show_o=st.checkbox('Show 56–75 yr norm band',value=_A)
+		if sel:
+			fig,ax=plt.subplots(figsize=(10,5.5),dpi=130);ax.set_facecolor('#f8fafc');fig.patch.set_facecolor(_y);xi=np.arange(4)
+			if show_y:b=get_norm_band(_n);ax.fill_between(xi,b[_b],b[_a],color=_U,alpha=.13,label='Normal 20–55 yrs');ax.plot(xi,b[_I],color=_U,lw=1.2,ls=_V,alpha=.6)
+			if show_o:b=get_norm_band(_o);ax.fill_between(xi,b[_b],b[_a],color=_w,alpha=.1,label='Normal 56–75 yrs');ax.plot(xi,b[_I],color=_w,lw=1.2,ls=_V,alpha=.5)
+			pal=[_v,_x,'#8b5cf6','#10b981'];ls_map={'OD':'-','OS':_V}
+			for(i,ti)in enumerate(sel):
+				t=tests_list[ti];lv=[t.get(f"log_{A.lower()}")for A in ROW_LABELS];pts=[(B,A)for(B,A)in enumerate(lv)if A is not _C]
+				if pts:
+					px2,py=zip(*pts);ax.plot(list(px2),list(py),color=pal[i%4],ls=ls_map.get(t[_F],'-'),lw=2.5,marker='o',ms=8,markerfacecolor=_y,markeredgewidth=2.2,label=f"{t[_F]} — {t.get(_K)or _l} ({t[_L]})",zorder=5)
+					for(px3,py3)in pts:ax.annotate(f"{py3:.2f}",(px3,py3),textcoords='offset points',xytext=(0,10),fontsize=8,color=pal[i%4],ha='center',fontweight='600')
+			ax.set_xticks(xi);ax.set_xticklabels([f"{A} cpd"for A in SPATIAL_FREQS],fontsize=11);ax.set_ylim(0,2.7);ax.set_yticks([0,.5,1,1.5,2,2.5]);ax.set_ylabel(_AB,fontsize=11);ax.set_xlabel('Spatial Frequency (Cycles per Degree)',fontsize=11);ax.grid(_A,color=_d,lw=.8,alpha=.8);ax.spines[['top','right']].set_visible(_B);ax.legend(fontsize=9,loc='upper right',framealpha=.95);ax.set_title(f"{patient[_O]} ({patient[_f]} yrs)",fontsize=12,fontweight='600',color='#1e293b');plt.tight_layout();st.pyplot(fig,use_container_width=_A);plt.close(fig);st.markdown('#### AULCSF');badge_map={_p:'🟢',_q:'🟡',_r:'🟠',_s:'🔴'};cols=st.columns(len(sel))
+			for(col,ti)in zip(cols,sel):t=tests_list[ti];v=t.get(_N);interp,_=interpret_aulcsf(v);col.metric(f"{t[_F]} · {t.get(_K)or t[_L]}",f"{v:.3f}"if v else _J,f"{badge_map.get(interp,"⚪")} {interp}")
 with tab_history:
-    st.markdown('<p class="section-hdr">📋 Test History</p>', unsafe_allow_html=True)
-    if not tests_list:
-        st.info("No tests recorded yet.")
-    else:
-        rows_data = []
-        for t in tests_list:
-            interp,_ = interpret_aulcsf(t.get("aulcsf"))
-            rows_data.append({
-                "Date": t["visit_date"], "Eye": t["eye"],
-                "Visit": t.get("visit_label") or "—",
-                "A (3cpd)":  f"{t['score_a']} → {t['log_a']:.2f}" if t.get("log_a") else "0",
-                "B (6cpd)":  f"{t['score_b']} → {t['log_b']:.2f}" if t.get("log_b") else "0",
-                "C (12cpd)": f"{t['score_c']} → {t['log_c']:.2f}" if t.get("log_c") else "0",
-                "D (18cpd)": f"{t['score_d']} → {t['log_d']:.2f}" if t.get("log_d") else "0",
-                "AULCSF": f"{t['aulcsf']:.3f}" if t.get("aulcsf") is not None else "—",
-                "Interpretation": interp,
-                "Notes": t.get("notes") or "—",
-            })
-        df = pd.DataFrame(rows_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Download CSV", csv,
-                           f"CVPRO_{patient['name'].replace(' ','_')}_tests.csv",
-                           "text/csv")
-        st.markdown("---")
-        del_idx = st.selectbox("Select test to delete", range(len(tests_list)),
-                               format_func=lambda i: f"{tests_list[i]['eye']} · "
-                               f"{tests_list[i].get('visit_label') or 'Visit'} · "
-                               f"{tests_list[i]['visit_date']}")
-        if st.button("🗑️ Delete", type="secondary"):
-            st.session_state.tests[pk].pop(del_idx)
-            st.rerun()
-
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align:center; color:#94a3b8; font-size:12px; line-height:2;'>"
-    "CS Pro · Near Vision Contrast Sensitivity · "
-    "Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · "
-    "<span style='color:#94a3b8;'>For research &amp; clinical use</span>"
-    "<br>For scientific basis of grating generation, open the "
-    "<b>🔬 Scientific basis</b> section in the Live Test tab."
-    "</div>",
-    unsafe_allow_html=True,
-)
-
-# v2.6.0 — fix: circle size now responds to distance/DPI changes; range restored to 30-200 cm
-# v2.7.0 — feat: inter-stimulus interval (ISI) 450ms grey discs between stimuli
-# v2.8.0 — feat: Scientific basis expander in Live Test tab; footer reference
-# v2.9.0 — fix: distance text updated throughout (50 cm → 50–200 cm range)
-# v3.0.0 — fix: MIN_DISPLAY_PX 80→50 (rows C/D no longer clamped at 50cm); anti-run max 2→3; renamed CS Pro
-# v3.1.0 — feat: per-device licence system (Supabase-backed, device fingerprint lock, admin panel)
+	st.markdown('<p class="section-hdr">📋 Test History</p>',unsafe_allow_html=_A)
+	if not tests_list:st.info('No tests recorded yet.')
+	else:
+		rows_data=[]
+		for t in tests_list:interp,_=interpret_aulcsf(t.get(_N));rows_data.append({'Date':t[_L],'Eye':t[_F],_l:t.get(_K)or _J,'A (3cpd)':f"{t[_A3]} → {t[_h]:.2f}"if t.get(_h)else'0','B (6cpd)':f"{t[_A4]} → {t[_i]:.2f}"if t.get(_i)else'0','C (12cpd)':f"{t[_A5]} → {t[_j]:.2f}"if t.get(_j)else'0','D (18cpd)':f"{t[_A6]} → {t[_k]:.2f}"if t.get(_k)else'0','AULCSF':f"{t[_N]:.3f}"if t.get(_N)is not _C else _J,'Interpretation':interp,'Notes':t.get(_Q)or _J})
+		df=pd.DataFrame(rows_data);st.dataframe(df,use_container_width=_A,hide_index=_A);csv=df.to_csv(index=_B).encode('utf-8');st.download_button('⬇️ Download CSV',csv,f"CVPRO_{patient[_O].replace(" ","_")}_tests.csv",'text/csv');st.markdown('---');del_idx=st.selectbox('Select test to delete',range(len(tests_list)),format_func=lambda i:f"{tests_list[i][_F]} · {tests_list[i].get(_K)or _l} · {tests_list[i][_L]}")
+		if st.button('🗑️ Delete',type='secondary'):st.session_state.tests[pk].pop(del_idx);st.rerun()
+st.markdown('---')
+st.markdown("<div style='text-align:center; color:#94a3b8; font-size:12px; line-height:2;'>CS Pro · Near Vision Contrast Sensitivity · Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · <span style='color:#94a3b8;'>For research &amp; clinical use</span><br>For scientific basis of grating generation, open the <b>🔬 Scientific basis</b> section in the Live Test tab.</div>",unsafe_allow_html=_A)
