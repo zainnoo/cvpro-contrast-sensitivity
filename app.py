@@ -1,5 +1,5 @@
 """
-CV PRO — Contrast Sensitivity Analyser
+CS Pro — Contrast Sensitivity Analyser
 Streamlit app · VectorVision CSV-1000 protocol
 All modules consolidated into one file for reliability.
 """
@@ -21,7 +21,7 @@ from PIL import Image
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="CV PRO — Contrast Sensitivity Analyser",
+    page_title="CS Pro — Contrast Sensitivity Analyser",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -245,7 +245,7 @@ def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
     story = []
 
     # Header
-    story.append(Paragraph("CV PRO",
+    story.append(Paragraph("CS Pro",
         ParagraphStyle("h",fontSize=20,textColor=BLUE,fontName="Helvetica-Bold")))
     story.append(Paragraph("Contrast Sensitivity Function Report",
         ParagraphStyle("s",fontSize=9,textColor=MID,fontName="Helvetica",spaceAfter=4)))
@@ -352,7 +352,7 @@ def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
     story.append(HRFlowable(width="100%",thickness=0.5,color=MID))
     story.append(Spacer(1,0.2*cm))
     story.append(Paragraph(
-        f"CV PRO · Generated {datetime.datetime.now().strftime('%d %b %Y %H:%M')} · "
+        f"CS Pro · Generated {datetime.datetime.now().strftime('%d %b %Y %H:%M')} · "
         "Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al.",
         ParagraphStyle("ft",fontSize=7,textColor=MID,alignment=TA_CENTER)))
     doc.build(story)
@@ -364,7 +364,7 @@ def generate_pdf(patient_name, patient_age, patient_gender, patient_mrn, tests):
 # ══════════════════════════════════════════════════════════════════════════════
 # Maximum on-screen diameter to prevent overflow (caps at 420px per column)
 MAX_DISPLAY_PX = 420
-MIN_DISPLAY_PX = 80
+MIN_DISPLAY_PX = 50   # lowered from 80 — prevents false clamping of rows C/D at near distances
 
 def pil_to_b64(img: Image.Image, size_px: int) -> str:
     """Resize PIL image to size_px square and return base64-encoded PNG string."""
@@ -415,7 +415,7 @@ init_state()
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 👁️ CV PRO")
+    st.markdown("## 👁️ CS Pro")
     st.caption("Near Vision Contrast Sensitivity")
     st.divider()
 
@@ -489,9 +489,9 @@ with st.sidebar:
 # MAIN AREA
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.active_patient:
-    st.markdown("## Welcome to CV PRO")
+    st.markdown("## Welcome to CS Pro")
     st.markdown("""
-**CV PRO** is a contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at testing distances of **50 cm to 200 cm**.
+**CS Pro** is a contrast sensitivity testing tool based on the VectorVision CSV-1000 protocol, designed to run on any modern laptop at testing distances of **50 cm to 200 cm**.
 
 **Getting started:**
 1. **Select your laptop model** in the sidebar — sets the correct DPI automatically
@@ -565,9 +565,9 @@ with tab_live:
 | Screen preset | Select your exact laptop model in the sidebar |
         """)
 
-    with st.expander("🔬 Scientific basis — how CV PRO generates authentic gratings"):
+    with st.expander("🔬 Scientific basis — how CS Pro generates authentic gratings"):
         st.markdown("""
-## How CV PRO Produces Clinically Valid Contrast Sensitivity Gratings
+## How CS Pro Produces Clinically Valid Contrast Sensitivity Gratings
 
 ### The core question: can a laptop screen replace a ₹7 lakh calibrated chart?
 
@@ -630,7 +630,7 @@ There are **no hard edges, no square waves, no harmonic distortion** — only a 
 
 A pixel value of 128 (mid-grey) does not produce half the light output of 255 (white) — screens are non-linear. Without correction, the sine wave would be distorted in physical luminance.
 
-CV PRO applies the **standard sRGB gamma correction (γ = 2.2)** to every pixel before display:
+CS Pro applies the **standard sRGB gamma correction (γ = 2.2)** to every pixel before display:
 
 > **Pixel value = (L)^(1/2.2) × 255**
 
@@ -646,7 +646,7 @@ The Michelson contrast at each of the 36 test positions is taken directly from V
 
 ### What is different from the CSV-1000
 
-| Factor | CSV-1000 | CV PRO |
+| Factor | CSV-1000 | CS Pro |
 |---|---|---|
 | Grating physics | Sinusoidal ✅ | Sinusoidal ✅ |
 | Contrast values | VectorVision norms ✅ | Identical ✅ |
@@ -655,7 +655,7 @@ The Michelson contrast at each of the 36 test positions is taken directly from V
 | Testing distance | 200 cm (far vision) | 50 – 200 cm (adjustable) ✅ |
 | Scoring & norms | Same | Identical ✅ |
 
-The most meaningful difference is **luminance**. Luminance is controlled by standardising screen brightness at 50%. CV PRO supports testing distances from **50 cm to 200 cm** — adjust in the sidebar to match your clinical setup. Results at near distances (50–80 cm) reflect near vision contrast sensitivity and should not be directly equated to far-distance CSV-1000 scores without acknowledging this difference. At 200 cm, results are directly comparable to the standard CSV-1000 protocol.
+The most meaningful difference is **luminance**. Luminance is controlled by standardising screen brightness at 50%. CS Pro supports testing distances from **50 cm to 200 cm** — adjust in the sidebar to match your clinical setup. Results at near distances (50–80 cm) reflect near vision contrast sensitivity and should not be directly equated to far-distance CSV-1000 scores without acknowledging this difference. At 200 cm, results are directly comparable to the standard CSV-1000 protocol.
         """)
 
     st.divider()
@@ -683,7 +683,7 @@ The most meaningful difference is **luminance**. Luminance is controlled by stan
             for row in ROW_LABELS:
                 for sc in SCORES_ALL:
                     choices = ["A", "B"]
-                    if run >= 2:          # force a switch after 2 in a row
+                    if run >= 3:          # force a switch after 3 in a row (max run = 3)
                         choices = ["B" if last == "A" else "A"]
                     side = random.choice(choices)
                     pos[(row, sc)] = side
@@ -1010,7 +1010,7 @@ with tab_history:
 st.markdown("---")
 st.markdown(
     "<div style='text-align:center; color:#94a3b8; font-size:12px; line-height:2;'>"
-    "CV PRO · Near Vision Contrast Sensitivity · "
+    "CS Pro · Near Vision Contrast Sensitivity · "
     "Log CS: VectorVision CSV-1000 norms · AULCSF: Applegate et al. · "
     "<span style='color:#94a3b8;'>For research &amp; clinical use</span>"
     "<br>For scientific basis of grating generation, open the "
@@ -1023,3 +1023,4 @@ st.markdown(
 # v2.7.0 — feat: inter-stimulus interval (ISI) 450ms grey discs between stimuli
 # v2.8.0 — feat: Scientific basis expander in Live Test tab; footer reference
 # v2.9.0 — fix: distance text updated throughout (50 cm → 50–200 cm range)
+# v3.0.0 — fix: MIN_DISPLAY_PX 80→50 (rows C/D no longer clamped at 50cm); anti-run max 2→3; renamed CS Pro
