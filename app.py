@@ -2,21 +2,21 @@
 # Copyright (c) 2026 Dr Zain Khatib. All rights reserved.
 # Unauthorised copying, modification, or redistribution of this software
 # is strictly prohibited. This file is proprietary and confidential.
-# Protected under applicable intellectual property laws.
 import base64 as _b64
 _d=lambda s:_b64.b64decode(s).decode()
-_AD='collapsed'
-_AC='isi_active'
-_AB='Log Contrast Sensitivity'
-_AA='gratings_output'
-_A9='Custom (enter DPI)'
-_A8='doctor_email'
-_A7='doctor_name'
-_A6='score_d'
-_A5='score_c'
-_A4='score_b'
-_A3='score_a'
-_A2='gender'
+_AE='collapsed'
+_AD='isi_active'
+_AC='Log Contrast Sensitivity'
+_AB='gratings_output'
+_AA='Custom (enter DPI)'
+_A9='doctor_email'
+_A8='doctor_name'
+_A7='score_d'
+_A6='score_c'
+_A5='score_b'
+_A4='score_a'
+_A3='gender'
+_A2='_device_fp'
 _A1='screen_valid'
 _A0='distance_cm'
 _z='screen_dpi'
@@ -99,7 +99,7 @@ def check_licence(key,fingerprint):
 	if D!=C:return _B,'❌ This licence key is already activated on another device. Licence keys cannot be shared. Contact Dr Zain Khatib for a new key.'
 	return _A,'✅ Licence valid.'
 def admin_create_licence(doctor_name,doctor_email,notes):
-	B=generate_licence_key();A=_sb_request('POST','cspro_licences',{_M:B,_A7:doctor_name,_A8:doctor_email,_Q:notes})
+	B=generate_licence_key();A=_sb_request('POST','cspro_licences',{_M:B,_A8:doctor_name,_A9:doctor_email,_Q:notes})
 	if isinstance(A,list)and A:return B,_C
 	return _C,str(A.get('error','Unknown error'))
 def admin_revoke_licence(key):_sb_request(_X,f"cspro_licences?licence_key=eq.{key}",{_P:_B})
@@ -134,15 +134,15 @@ def interpret_aulcsf(val):
 	if A>=1.09:return _r,'red'
 	return _s,'darkred'
 def get_norm_band(grp):A=AGE_NORMS[grp];return{_a:[A+B for(A,B)in zip(A[_I],A[_Z])],_I:A[_I],_b:[max(0,A-B)for(A,B)in zip(A[_I],A[_Z])]}
-COMMON_SCREENS={'Samsung Galaxy Book4 Pro 360 (16")':212,'MacBook Pro 14" (M-series)':254,'MacBook Pro 16" (M-series)':254,'MacBook Air 13" (M-series)':224,'MacBook Air 15" (M-series)':224,'Dell XPS 13 (2560×1600)':227,'Dell XPS 15 (3456×2160)':261,'HP Spectre x360 14"':260,'Lenovo ThinkPad X1 Carbon (14")':210,'Surface Laptop 5 (13.5")':201,'Surface Pro 9 (13")':267,'iPad Pro 12.9" (M-series)':264,'iPad Air 11" (M3)':264,'Full HD Laptop 15.6" (1920×1080)':141,'Full HD Laptop 14" (1920×1080)':157,'2K Laptop 14" (2560×1600)':214,_A9:_C}
+COMMON_SCREENS={'Samsung Galaxy Book4 Pro 360 (16")':212,'MacBook Pro 14" (M-series)':254,'MacBook Pro 16" (M-series)':254,'MacBook Air 13" (M-series)':224,'MacBook Air 15" (M-series)':224,'Dell XPS 13 (2560×1600)':227,'Dell XPS 15 (3456×2160)':261,'HP Spectre x360 14"':260,'Lenovo ThinkPad X1 Carbon (14")':210,'Surface Laptop 5 (13.5")':201,'Surface Pro 9 (13")':267,'iPad Pro 12.9" (M-series)':264,'iPad Air 11" (M3)':264,'Full HD Laptop 15.6" (1920×1080)':141,'Full HD Laptop 14" (1920×1080)':157,'2K Laptop 14" (2560×1600)':214,_AA:_C}
 def ppd(dpi,dist_cm):A=2.54/dpi;return 1./np.degrees(np.arctan(A/dist_cm))
 def circle_diam_px(freq_cpd,dpi,dist_cm,cycles):return max(60,int(round(ppd(dpi,dist_cm)/freq_cpd*cycles)))
 def validate_screen(dpi,dist_cm):
 	C=dist_cm;B=dpi;A={_t:round(ppd(B,C),1),_T:{}}
 	for D in ROW_LABELS:E=FREQS[D];H=CYCLES_IN_MASTER[D];F=circle_diam_px(E,B,C,H);G=ppd(B,C)/E;I=G>=2. and F>=60;A[_T][D]={'freq':E,'diam_px':F,'ppc':round(G,1),_c:I}
 	A[_u]=all(A[_c]for A in A[_T].values());return A
-GRATING_DIR=os.path.join(os.path.dirname(__file__),_AA,'gratings')
-BLANK_DIR=os.path.join(os.path.dirname(__file__),_AA,'blanks')
+GRATING_DIR=os.path.join(os.path.dirname(__file__),_AB,'gratings')
+BLANK_DIR=os.path.join(os.path.dirname(__file__),_AB,'blanks')
 GRATINGS_AVAILABLE=os.path.isdir(GRATING_DIR)
 def linear_to_srgb(L):return(np.power(np.clip(L,0,1),1/2.2)*255).astype(np.uint8)
 def make_grating_image(freq_cpd,michelson,diam_px,cycles):A=diam_px;E=np.linspace(0,cycles*2*np.pi,A);F=np.tile(E,(A,1));C=.5*(1+michelson*np.sin(F));G=D=A//2;H,I=np.ogrid[:A,:A];C[np.sqrt((I-D)**2+(H-G)**2)>D-1]=.5;B=linear_to_srgb(C);return Image.fromarray(np.stack([B,B,B],axis=-1),mode='RGB')
@@ -168,7 +168,7 @@ def generate_pdf(patient_name,patient_age,patient_gender,patient_mrn,tests):
 		for(y,D)in enumerate(N):
 			F=[D.get(f"log_{A.lower()}")for A in ROW_LABELS];z,j=zip(*[(B,A)for(B,A)in enumerate(F)if A is not _C])if any(A is not _C for A in F)else([],[])
 			if j:A0=i[y%len(i)];E.plot(list(z),list(j),color=A0,ls=x.get(D[_F],'-'),lw=2.2,marker='o',ms=7,markerfacecolor=_y,markeredgewidth=2,label=f"{D[_F]} · {D.get(_K)or D[_L]}")
-		E.set_xticks(T);E.set_xticklabels([f"{A} cpd"for A in SPATIAL_FREQS]);E.set_ylim(0,2.6);E.set_ylabel(_AB);E.set_xlabel('Spatial Frequency (cpd)');E.grid(_A,color=_d,lw=.8);E.spines[['top','right']].set_visible(_B);E.legend(fontsize=8);plt.tight_layout();V=io.BytesIO();plt.savefig(V,format='png',bbox_inches='tight');plt.close(w);V.seek(0);B.append(s([H('Contrast Sensitivity Function Curve',G(p,fontSize=11,textColor=Q,fontName=I,spaceAfter=6)),r(V,width=16*A,height=9*A)]));B.append(K(1,.5*A))
+		E.set_xticks(T);E.set_xticklabels([f"{A} cpd"for A in SPATIAL_FREQS]);E.set_ylim(0,2.6);E.set_ylabel(_AC);E.set_xlabel('Spatial Frequency (cpd)');E.grid(_A,color=_d,lw=.8);E.spines[['top','right']].set_visible(_B);E.legend(fontsize=8);plt.tight_layout();V=io.BytesIO();plt.savefig(V,format='png',bbox_inches='tight');plt.close(w);V.seek(0);B.append(s([H('Contrast Sensitivity Function Curve',G(p,fontSize=11,textColor=Q,fontName=I,spaceAfter=6)),r(V,width=16*A,height=9*A)]));B.append(K(1,.5*A))
 	B.append(H('Detailed Scores',G(p,fontSize=11,textColor=Q,fontName=I,spaceAfter=8)))
 	for D in N:
 		W=D.get(_N);A1,_=interpret_aulcsf(W);B.append(H(f"<b>{D[_F]}</b> · {D.get(_K)or""} · {D[_L]}",G('te',fontSize=10,fontName=L,spaceAfter=4)));A2=[['Row','Freq','Score','Log CS','Status']];k=[]
@@ -189,13 +189,17 @@ def show_circle(img,label,physics_px):B=label;A=int(np.clip(physics_px,MIN_DISPL
         </div>
         ''',unsafe_allow_html=_A)
 def init_state():
-	B={'patients':{},'active_patient':_C,'tests':{},_z:96,_A0:200,_A1:validate_screen(96,200),'test_row_idx':0,'test_score_idx':0,'test_answers':{},'test_scores':{},'test_grating_pos':{},'test_done':_B,'test_started':_B,_AC:_B}
+	B={'patients':{},'active_patient':_C,'tests':{},_z:96,_A0:200,_A1:validate_screen(96,200),'test_row_idx':0,'test_score_idx':0,'test_answers':{},'test_scores':{},'test_grating_pos':{},'test_done':_B,'test_started':_B,_AD:_B}
 	for(A,C)in B.items():
 		if A not in st.session_state:st.session_state[A]=C
 init_state()
-st.markdown('\n<script>\n(function(){\n  function getFingerprint(){\n    var nav = window.navigator;\n    var scr = window.screen;\n    var raw = [\n      nav.userAgent, nav.language,\n      scr.colorDepth, scr.width, scr.height,\n      new Date().getTimezoneOffset(),\n      nav.hardwareConcurrency||"",\n      nav.platform||""\n    ].join("|");\n    // simple djb2 hash\n    var h = 5381;\n    for(var i=0;i<raw.length;i++){ h=((h<<5)+h)+raw.charCodeAt(i); h=h&h; }\n    return _d("ZnA=") + Math.abs(h).toString(16);\n  }\n  var fp = sessionStorage.getItem("cspro_fp") || getFingerprint();\n  sessionStorage.setItem("cspro_fp", fp);\n  // push fp into URL param so Streamlit can read it\n  var url = new URL(window.location.href);\n  if(url.searchParams.get(_d("ZnA=")) !== fp){\n    url.searchParams.set(_d("ZnA="), fp);\n    window.history.replaceState({}, "", url.toString());\n    window.location.reload();\n  }\n})();\n</script>\n',unsafe_allow_html=_A)
+def _get_server_fingerprint():
+	try:from streamlit.web.server.websocket_headers import _get_websocket_headers as C;A=C();B='|'.join([A.get('User-Agent',''),A.get('Accept-Language',''),A.get('Accept-Encoding','')])
+	except Exception:B='fallback'
+	return'fp'+hashlib.md5(B.encode()).hexdigest()[:12]
+if _A2 not in st.session_state:st.session_state[_A2]=_get_server_fingerprint()
+_fingerprint=st.session_state[_A2]
 _params=st.query_params
-_fingerprint=_params.get('fp','unknown')
 _admin_mode=_params.get('admin','')=='1'
 if _M not in st.session_state:st.session_state[_M]=''
 if _W not in st.session_state:st.session_state[_W]=_B
@@ -223,8 +227,8 @@ if _admin_mode:
 	if isinstance(licences,list)and licences:
 		for lic in licences:
 			status_icon='🟢'if lic.get(_P)else'🔴';activated='✅ Activated'if lic.get(_m)else'⏳ Not yet used'
-			with st.expander(f"{status_icon} {lic[_A7]} — {lic[_M]}"):
-				st.markdown(f"**Email:** {lic.get(_A8)or _J}");st.markdown(f"**Status:** {"Active"if lic.get(_P)else"🔴 Revoked"}");st.markdown(f"**Device:** {activated}");st.markdown(f"**Fingerprint:** `{lic.get(_Y)or"none"}`");st.markdown(f"**Created:** {lic["created_at"][:10]}");st.markdown(f"**Notes:** {lic.get(_Q)or _J}");c1,c2,c3=st.columns(3)
+			with st.expander(f"{status_icon} {lic[_A8]} — {lic[_M]}"):
+				st.markdown(f"**Email:** {lic.get(_A9)or _J}");st.markdown(f"**Status:** {"Active"if lic.get(_P)else"🔴 Revoked"}");st.markdown(f"**Device:** {activated}");st.markdown(f"**Fingerprint:** `{lic.get(_Y)or"none"}`");st.markdown(f"**Created:** {lic["created_at"][:10]}");st.markdown(f"**Notes:** {lic.get(_Q)or _J}");c1,c2,c3=st.columns(3)
 				if lic.get(_P):
 					if c1.button('🔴 Revoke',key=f"rev_{lic["id"]}"):admin_revoke_licence(lic[_M]);st.success('Revoked.');st.rerun()
 				elif c1.button('🟢 Reactivate',key=f"react_{lic["id"]}"):admin_reactivate_licence(lic[_M]);st.success('Reactivated.');st.rerun()
@@ -234,10 +238,8 @@ if _admin_mode:
 if not st.session_state[_W]:
 	_,col,_=st.columns([1,2,1])
 	with col:
-		st.markdown('\n        <div style="text-align:center; padding: 40px 0 20px;">\n          <span style="font-size:56px;">👁️</span>\n          <h1 style="margin:12px 0 4px; font-size:28px; font-weight:700;">CS Pro</h1>\n          <p style="color:#64748b; font-size:15px; margin:0;">Contrast Sensitivity Analyser</p>\n          <p style="color:#64748b; font-size:13px; margin-top:4px;">VectorVision CSV-1000 Protocol</p>\n        </div>\n        ',unsafe_allow_html=_A);st.markdown('#### Enter your licence key');key_input=st.text_input('Licence key',placeholder='CSPRO-XXXX-XXXX-XXXX',key='licence_key_input',label_visibility=_AD).strip().upper()
-		if st.button('🔓 Unlock CS Pro',type=_S,use_container_width=_A):
-			if _fingerprint=='unknown':st.warning('⚠️ Device fingerprint not ready yet. Please wait a moment and try again.')
-			else:ok,msg=check_licence(key_input,_fingerprint);st.session_state[_W]=ok;st.session_state[_M]=key_input;st.session_state[_R]=msg;st.rerun()
+		st.markdown('\n        <div style="text-align:center; padding: 40px 0 20px;">\n          <span style="font-size:56px;">👁️</span>\n          <h1 style="margin:12px 0 4px; font-size:28px; font-weight:700;">CS Pro</h1>\n          <p style="color:#64748b; font-size:15px; margin:0;">Contrast Sensitivity Analyser</p>\n          <p style="color:#64748b; font-size:13px; margin-top:4px;">VectorVision CSV-1000 Protocol</p>\n        </div>\n        ',unsafe_allow_html=_A);st.markdown('#### Enter your licence key');key_input=st.text_input('Licence key',placeholder='CSPRO-XXXX-XXXX-XXXX',key='licence_key_input',label_visibility=_AE).strip().upper()
+		if st.button('🔓 Unlock CS Pro',type=_S,use_container_width=_A):ok,msg=check_licence(key_input,_fingerprint);st.session_state[_W]=ok;st.session_state[_M]=key_input;st.session_state[_R]=msg;st.rerun()
 		if st.session_state[_R]:
 			if st.session_state[_W]:st.success(st.session_state[_R])
 			else:st.error(st.session_state[_R])
@@ -245,7 +247,7 @@ if not st.session_state[_W]:
 	st.stop()
 with st.sidebar:
 	st.markdown('## 👁️ CS Pro');st.caption('Near Vision Contrast Sensitivity');st.divider();st.markdown('### 🖥️ Screen Setup');screen_choice=st.selectbox('Screen type',list(COMMON_SCREENS.keys()),key='screen_choice')
-	if screen_choice==_A9:dpi=st.number_input('DPI / PPI',min_value=60,max_value=600,value=96,step=1)
+	if screen_choice==_AA:dpi=st.number_input('DPI / PPI',min_value=60,max_value=600,value=96,step=1)
 	else:dpi=COMMON_SCREENS[screen_choice];st.caption(f"DPI: **{dpi}**")
 	dist_cm=st.number_input('Testing distance (cm)',min_value=30,max_value=200,value=50,step=5,key='distance_cm_input');val=validate_screen(dpi,dist_cm);st.session_state[_z]=dpi;st.session_state[_A0]=dist_cm;st.session_state[_A1]=val
 	if val[_u]:st.success(f"✅ Valid · {val[_t]} px/°")
@@ -257,7 +259,7 @@ with st.sidebar:
 		p_name=st.text_input('Full Name *',placeholder='e.g. Ramesh Kumar');p_age=st.number_input('Age *',min_value=1,max_value=120,value=45);p_gender=st.selectbox('Gender *',['Male','Female','Other']);p_mrn=st.text_input('MRN / ID',placeholder='OPH-2026-001')
 		if st.form_submit_button('➕ Add Patient',use_container_width=_A):
 			if p_name.strip():
-				key=p_mrn.strip()or p_name.strip();st.session_state.patients[key]={_O:p_name.strip(),_f:int(p_age),_A2:p_gender,_g:p_mrn.strip()}
+				key=p_mrn.strip()or p_name.strip();st.session_state.patients[key]={_O:p_name.strip(),_f:int(p_age),_A3:p_gender,_g:p_mrn.strip()}
 				if key not in st.session_state.tests:st.session_state.tests[key]=[]
 				st.session_state.active_patient=key;st.success(f"Added {p_name}")
 	st.divider();st.markdown('### Select Patient')
@@ -269,9 +271,9 @@ pk=st.session_state.active_patient
 patient=st.session_state.patients[pk]
 tests_list=st.session_state.tests.get(pk,[])
 col_h,col_dl=st.columns([3,1])
-with col_h:st.markdown(f"## {patient[_O]}");st.caption(f"{patient[_f]} yrs · {patient[_A2]}"+(f" · `{patient[_g]}`"if patient.get(_g)else''))
+with col_h:st.markdown(f"## {patient[_O]}");st.caption(f"{patient[_f]} yrs · {patient[_A3]}"+(f" · `{patient[_g]}`"if patient.get(_g)else''))
 with col_dl:
-	if tests_list:pdf_bytes=generate_pdf(patient[_O],patient[_f],patient[_A2],patient.get(_g,''),tests_list);st.download_button('⬇️ Download PDF Report',data=pdf_bytes,file_name=f"CVPRO_{patient[_O].replace(" ","_")}_{datetime.date.today()}.pdf",mime='application/pdf',use_container_width=_A)
+	if tests_list:pdf_bytes=generate_pdf(patient[_O],patient[_f],patient[_A3],patient.get(_g,''),tests_list);st.download_button('⬇️ Download PDF Report',data=pdf_bytes,file_name=f"CVPRO_{patient[_O].replace(" ","_")}_{datetime.date.today()}.pdf",mime='application/pdf',use_container_width=_A)
 st.divider()
 tab_live,tab_manual,tab_chart,tab_history=st.tabs(['🔬 Live Test','📝 Manual Entry','📈 CS Graph','📋 Test History'])
 with tab_live:
@@ -299,11 +301,11 @@ with tab_live:
 		if aulcsf:st.markdown(f"### AULCSF: `{aulcsf:.3f}` {badge_map.get(interp_label,"⚪")} {interp_label}")
 		col_save,col_restart=st.columns(2)
 		with col_save:
-			if st.button('💾 Save to Patient Record',type=_S,use_container_width=_A):test_rec={_L:str(datetime.date.today()),_K:st.session_state.get('test_visit_label',''),_F:st.session_state.get('test_eye','OD'),_A3:final[_D],_A4:final[_E],_A5:final[_G],_A6:final[_H],_h:score_to_log(_D,final[_D]),_i:score_to_log(_E,final[_E]),_j:score_to_log(_G,final[_G]),_k:score_to_log(_H,final[_H]),_N:aulcsf,_Q:''};st.session_state.tests[pk].insert(0,test_rec);st.session_state.test_started=_B;st.session_state.test_done=_B;st.success('Saved! Switch to CS Graph or Test History to view.')
+			if st.button('💾 Save to Patient Record',type=_S,use_container_width=_A):test_rec={_L:str(datetime.date.today()),_K:st.session_state.get('test_visit_label',''),_F:st.session_state.get('test_eye','OD'),_A4:final[_D],_A5:final[_E],_A6:final[_G],_A7:final[_H],_h:score_to_log(_D,final[_D]),_i:score_to_log(_E,final[_E]),_j:score_to_log(_G,final[_G]),_k:score_to_log(_H,final[_H]),_N:aulcsf,_Q:''};st.session_state.tests[pk].insert(0,test_rec);st.session_state.test_started=_B;st.session_state.test_done=_B;st.success('Saved! Switch to CS Graph or Test History to view.')
 		with col_restart:
 			if st.button('🔄 Restart Test',use_container_width=_A):st.session_state.test_started=_B;st.session_state.test_done=_B;st.rerun()
 	else:
-		if st.session_state.get(_AC,_B):st.session_state.isi_active=_B;isi_slot=st.empty();isi_slot.markdown('\n                <div style="\n                    display:flex; flex-direction:column;\n                    align-items:center; justify-content:center;\n                    height:320px; gap:32px;\n                ">\n                  <div style="display:flex; gap:80px;">\n                    <div style="\n                        width:180px; height:180px; border-radius:50%;\n                        background:#d1d5db;\n                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);\n                    "></div>\n                    <div style="\n                        width:180px; height:180px; border-radius:50%;\n                        background:#d1d5db;\n                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);\n                    "></div>\n                  </div>\n                  <div style="color:#94a3b8; font-size:13px; letter-spacing:0.05em;">next stimulus loading…</div>\n                </div>\n                ',unsafe_allow_html=_A);time.sleep(.45);isi_slot.empty();st.rerun()
+		if st.session_state.get(_AD,_B):st.session_state.isi_active=_B;isi_slot=st.empty();isi_slot.markdown('\n                <div style="\n                    display:flex; flex-direction:column;\n                    align-items:center; justify-content:center;\n                    height:320px; gap:32px;\n                ">\n                  <div style="display:flex; gap:80px;">\n                    <div style="\n                        width:180px; height:180px; border-radius:50%;\n                        background:#d1d5db;\n                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);\n                    "></div>\n                    <div style="\n                        width:180px; height:180px; border-radius:50%;\n                        background:#d1d5db;\n                        box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);\n                    "></div>\n                  </div>\n                  <div style="color:#94a3b8; font-size:13px; letter-spacing:0.05em;">next stimulus loading…</div>\n                </div>\n                ',unsafe_allow_html=_A);time.sleep(.45);isi_slot.empty();st.rerun()
 		row_idx=st.session_state.test_row_idx;score_idx=st.session_state.test_score_idx
 		if row_idx>=len(ROW_LABELS):st.session_state.test_done=_A;st.rerun()
 		row=ROW_LABELS[row_idx];score=SCORES_ALL[score_idx];freq=FREQS[row];diam=circle_diam_px(freq,dpi,dist_cm,CYCLES_IN_MASTER[row]);pos=st.session_state.test_grating_pos.get((row,score),_D);done=row_idx*9+score_idx;st.progress(done/36,text=f"Row {row} ({ROW_NAMES[row]}) — Position {score}/8");grating_img=get_grating(row,score,diam);blank_img=get_blank(row,diam);img_A=grating_img if pos==_D else blank_img;img_B=grating_img if pos==_E else blank_img;display_px=int(np.clip(diam,MIN_DISPLAY_PX,MAX_DISPLAY_PX));st.markdown('### Which circle has the **stripes**?');st.caption(f"Row {row} · {freq} cpd · Position {score} · Michelson contrast: {1/LINEAR_CS[row][score_idx]:.4f} · Circle: {display_px}px ({dist_cm} cm, {dpi} DPI)");col_a,col_b=st.columns(2)
@@ -336,10 +338,10 @@ with tab_manual:
 		st.markdown('#### Scores — enter last correct position for each row');sc1,sc2,sc3,sc4=st.columns(4);scores={}
 		for(col,row)in zip([sc1,sc2,sc3,sc4],ROW_LABELS):
 			with col:
-				st.markdown(f"**Row {row}** · {ROW_NAMES[row]}");scores[row]=st.selectbox(f"Score {row}",list(range(9)),format_func=lambda x:'0 — not seen'if x==0 else str(x),key=f"m_score_{row}",label_visibility=_AD);lv=score_to_log(row,scores[row])
+				st.markdown(f"**Row {row}** · {ROW_NAMES[row]}");scores[row]=st.selectbox(f"Score {row}",list(range(9)),format_func=lambda x:'0 — not seen'if x==0 else str(x),key=f"m_score_{row}",label_visibility=_AE);lv=score_to_log(row,scores[row])
 				if lv:st.caption(f"logCS: **{lv:.2f}**")
 		notes=st.text_area('Clinical Notes',placeholder='e.g. NS4 cataract · Post Phaco')
-		if st.form_submit_button('✅ Save',use_container_width=_A,type=_S):log_vals=[score_to_log(A,scores[A])for A in ROW_LABELS];aulcsf=calc_aulcsf(log_vals);rec={_L:str(visit_date),_K:visit_label.strip(),_F:eye_code,_A3:scores[_D],_A4:scores[_E],_A5:scores[_G],_A6:scores[_H],_h:log_vals[0],_i:log_vals[1],_j:log_vals[2],_k:log_vals[3],_N:aulcsf,_Q:notes.strip()};st.session_state.tests[pk].insert(0,rec);interp,_=interpret_aulcsf(aulcsf);st.success(f"Saved · AULCSF: {aulcsf:.3f} — {interp}"if aulcsf else'Saved')
+		if st.form_submit_button('✅ Save',use_container_width=_A,type=_S):log_vals=[score_to_log(A,scores[A])for A in ROW_LABELS];aulcsf=calc_aulcsf(log_vals);rec={_L:str(visit_date),_K:visit_label.strip(),_F:eye_code,_A4:scores[_D],_A5:scores[_E],_A6:scores[_G],_A7:scores[_H],_h:log_vals[0],_i:log_vals[1],_j:log_vals[2],_k:log_vals[3],_N:aulcsf,_Q:notes.strip()};st.session_state.tests[pk].insert(0,rec);interp,_=interpret_aulcsf(aulcsf);st.success(f"Saved · AULCSF: {aulcsf:.3f} — {interp}"if aulcsf else'Saved')
 with tab_chart:
 	st.markdown('<p class="section-hdr">📈 Contrast Sensitivity Function Curve</p>',unsafe_allow_html=_A)
 	if not tests_list:st.info('Record at least one test to generate the CSF curve.')
@@ -355,14 +357,14 @@ with tab_chart:
 				if pts:
 					px2,py=zip(*pts);ax.plot(list(px2),list(py),color=pal[i%4],ls=ls_map.get(t[_F],'-'),lw=2.5,marker='o',ms=8,markerfacecolor=_y,markeredgewidth=2.2,label=f"{t[_F]} — {t.get(_K)or _l} ({t[_L]})",zorder=5)
 					for(px3,py3)in pts:ax.annotate(f"{py3:.2f}",(px3,py3),textcoords='offset points',xytext=(0,10),fontsize=8,color=pal[i%4],ha='center',fontweight='600')
-			ax.set_xticks(xi);ax.set_xticklabels([f"{A} cpd"for A in SPATIAL_FREQS],fontsize=11);ax.set_ylim(0,2.7);ax.set_yticks([0,.5,1,1.5,2,2.5]);ax.set_ylabel(_AB,fontsize=11);ax.set_xlabel('Spatial Frequency (Cycles per Degree)',fontsize=11);ax.grid(_A,color=_d,lw=.8,alpha=.8);ax.spines[['top','right']].set_visible(_B);ax.legend(fontsize=9,loc='upper right',framealpha=.95);ax.set_title(f"{patient[_O]} ({patient[_f]} yrs)",fontsize=12,fontweight='600',color='#1e293b');plt.tight_layout();st.pyplot(fig,use_container_width=_A);plt.close(fig);st.markdown('#### AULCSF');badge_map={_p:'🟢',_q:'🟡',_r:'🟠',_s:'🔴'};cols=st.columns(len(sel))
+			ax.set_xticks(xi);ax.set_xticklabels([f"{A} cpd"for A in SPATIAL_FREQS],fontsize=11);ax.set_ylim(0,2.7);ax.set_yticks([0,.5,1,1.5,2,2.5]);ax.set_ylabel(_AC,fontsize=11);ax.set_xlabel('Spatial Frequency (Cycles per Degree)',fontsize=11);ax.grid(_A,color=_d,lw=.8,alpha=.8);ax.spines[['top','right']].set_visible(_B);ax.legend(fontsize=9,loc='upper right',framealpha=.95);ax.set_title(f"{patient[_O]} ({patient[_f]} yrs)",fontsize=12,fontweight='600',color='#1e293b');plt.tight_layout();st.pyplot(fig,use_container_width=_A);plt.close(fig);st.markdown('#### AULCSF');badge_map={_p:'🟢',_q:'🟡',_r:'🟠',_s:'🔴'};cols=st.columns(len(sel))
 			for(col,ti)in zip(cols,sel):t=tests_list[ti];v=t.get(_N);interp,_=interpret_aulcsf(v);col.metric(f"{t[_F]} · {t.get(_K)or t[_L]}",f"{v:.3f}"if v else _J,f"{badge_map.get(interp,"⚪")} {interp}")
 with tab_history:
 	st.markdown('<p class="section-hdr">📋 Test History</p>',unsafe_allow_html=_A)
 	if not tests_list:st.info('No tests recorded yet.')
 	else:
 		rows_data=[]
-		for t in tests_list:interp,_=interpret_aulcsf(t.get(_N));rows_data.append({'Date':t[_L],'Eye':t[_F],_l:t.get(_K)or _J,'A (3cpd)':f"{t[_A3]} → {t[_h]:.2f}"if t.get(_h)else'0','B (6cpd)':f"{t[_A4]} → {t[_i]:.2f}"if t.get(_i)else'0','C (12cpd)':f"{t[_A5]} → {t[_j]:.2f}"if t.get(_j)else'0','D (18cpd)':f"{t[_A6]} → {t[_k]:.2f}"if t.get(_k)else'0','AULCSF':f"{t[_N]:.3f}"if t.get(_N)is not _C else _J,'Interpretation':interp,'Notes':t.get(_Q)or _J})
+		for t in tests_list:interp,_=interpret_aulcsf(t.get(_N));rows_data.append({'Date':t[_L],'Eye':t[_F],_l:t.get(_K)or _J,'A (3cpd)':f"{t[_A4]} → {t[_h]:.2f}"if t.get(_h)else'0','B (6cpd)':f"{t[_A5]} → {t[_i]:.2f}"if t.get(_i)else'0','C (12cpd)':f"{t[_A6]} → {t[_j]:.2f}"if t.get(_j)else'0','D (18cpd)':f"{t[_A7]} → {t[_k]:.2f}"if t.get(_k)else'0','AULCSF':f"{t[_N]:.3f}"if t.get(_N)is not _C else _J,'Interpretation':interp,'Notes':t.get(_Q)or _J})
 		df=pd.DataFrame(rows_data);st.dataframe(df,use_container_width=_A,hide_index=_A);csv=df.to_csv(index=_B).encode('utf-8');st.download_button('⬇️ Download CSV',csv,f"CVPRO_{patient[_O].replace(" ","_")}_tests.csv",'text/csv');st.markdown('---');del_idx=st.selectbox('Select test to delete',range(len(tests_list)),format_func=lambda i:f"{tests_list[i][_F]} · {tests_list[i].get(_K)or _l} · {tests_list[i][_L]}")
 		if st.button('🗑️ Delete',type='secondary'):st.session_state.tests[pk].pop(del_idx);st.rerun()
 st.markdown('---')
